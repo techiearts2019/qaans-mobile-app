@@ -89,6 +89,7 @@ export default function AddEmployee() {
         !!form.empCode &&
         !!form.designation &&
         !!form.skill &&
+        !!form.project &&
         !!form.name &&
         !!form.gender &&
         !!form.marital &&
@@ -288,11 +289,12 @@ export default function AddEmployee() {
             />
             <DropdownField
               label="Project Allocation"
+              required
               value={form.project}
               options={["No Allocation", ...projects.map((p) => p.name)]}
               onSelect={(v) => set("project", v)}
               testID="project-dropdown"
-              placeholder="Allocate to a project (optional)"
+              placeholder="Allocate to a project"
             />
             <TextField
               label="Employee Name"
