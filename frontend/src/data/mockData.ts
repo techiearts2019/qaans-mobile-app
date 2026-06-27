@@ -194,6 +194,65 @@ export const skills = [
 export const genders = ["Male", "Female", "Other"];
 export const maritalStatuses = ["Single", "Married", "Divorced", "Widowed"];
 
+export type ProjectStatus = "Active" | "Completed" | "On Hold";
+
+export type Project = {
+  id: string;
+  name: string;
+  location: string;
+  startDate: string;
+  status: ProjectStatus;
+  allocatedEmployeeIds: string[];
+  cover: string;
+};
+
+export const projects: Project[] = [
+  {
+    id: "p1",
+    name: "Skyline Tower A",
+    location: "Sector 62, Noida",
+    startDate: "12 Jan 2026",
+    status: "Active",
+    allocatedEmployeeIds: ["e1", "e2", "e5"],
+    cover:
+      "https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=900&q=60",
+  },
+  {
+    id: "p2",
+    name: "Greenfield Mall Renovation",
+    location: "MG Road, Gurgaon",
+    startDate: "03 Nov 2025",
+    status: "Active",
+    allocatedEmployeeIds: ["e4"],
+    cover:
+      "https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=900&q=60",
+  },
+  {
+    id: "p3",
+    name: "Riverside Villas Phase 2",
+    location: "Yamuna Expressway",
+    startDate: "20 Aug 2025",
+    status: "On Hold",
+    allocatedEmployeeIds: [],
+    cover:
+      "https://images.unsplash.com/photo-1572120360610-d971b9d7767c?auto=format&fit=crop&w=900&q=60",
+  },
+  {
+    id: "p4",
+    name: "Metro Line Extension",
+    location: "Dwarka, Delhi",
+    startDate: "05 Feb 2025",
+    status: "Completed",
+    allocatedEmployeeIds: [],
+    cover:
+      "https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=900&q=60",
+  },
+];
+
+export function projectFor(employeeId: string): Project | undefined {
+  return projects.find((p) => p.allocatedEmployeeIds.includes(employeeId));
+}
+
 export const supervisor = {
   name: "Rajesh Verma",
   code: "SUP-0007",

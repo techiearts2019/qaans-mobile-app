@@ -17,6 +17,7 @@ import {
   Employee,
   EmployeeStatus,
   employees as initial,
+  projectFor,
 } from "@/src/data/mockData";
 import { colors, radius } from "@/src/theme/colors";
 
@@ -170,6 +171,7 @@ export default function EmployeesList() {
 
 function EmpCard({ emp }: { emp: Employee }) {
   const c = STATUS_COLOR[emp.status];
+  const proj = projectFor(emp.id);
   return (
     <Pressable
       style={styles.card}
@@ -188,6 +190,14 @@ function EmpCard({ emp }: { emp: Employee }) {
           <View style={styles.dotSep} />
           <Text style={styles.metaText}>{emp.designation}</Text>
         </View>
+        {proj ? (
+          <View style={styles.projChip}>
+            <Ionicons name="briefcase" size={10} color={colors.brand} />
+            <Text style={styles.projChipText} numberOfLines={1}>
+              {proj.name}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <View style={{ alignItems: "flex-end" }}>
         <View style={[styles.statusPill, { backgroundColor: c.bg }]}>
@@ -334,6 +344,23 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 999 },
   statusText: { fontSize: 10, fontWeight: "700" },
+  projChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: colors.brandSoft,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+    maxWidth: 200,
+  },
+  projChipText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.brand,
+  },
   empty: { alignItems: "center", paddingVertical: 60 },
   emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 12 },
 });

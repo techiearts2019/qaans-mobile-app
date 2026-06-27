@@ -21,6 +21,7 @@ import {
   designations,
   genders,
   maritalStatuses,
+  projects,
   skills,
 } from "@/src/data/mockData";
 import { colors, radius } from "@/src/theme/colors";
@@ -30,6 +31,7 @@ type FormState = {
   empCode: string;
   designation?: string;
   skill?: string;
+  project?: string;
   name: string;
   gender?: string;
   marital?: string;
@@ -283,6 +285,14 @@ export default function AddEmployee() {
               options={skills}
               onSelect={(v) => set("skill", v)}
               testID="skill-dropdown"
+            />
+            <DropdownField
+              label="Project Allocation"
+              value={form.project}
+              options={["No Allocation", ...projects.map((p) => p.name)]}
+              onSelect={(v) => set("project", v)}
+              testID="project-dropdown"
+              placeholder="Allocate to a project (optional)"
             />
             <TextField
               label="Employee Name"

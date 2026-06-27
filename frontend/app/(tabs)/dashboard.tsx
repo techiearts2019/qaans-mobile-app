@@ -54,6 +54,14 @@ const FEATURES: {
     path: "/employees",
   },
   {
+    key: "projects",
+    title: "Project Allocation",
+    icon: "briefcase",
+    bg: "#E0F2FE",
+    fg: "#0369A1",
+    path: "/projects",
+  },
+  {
     key: "records",
     title: "Attendance Records",
     icon: "calendar",
@@ -68,14 +76,6 @@ const FEATURES: {
     bg: "#F3E8FF",
     fg: "#7C3AED",
     path: "/salary-records",
-  },
-  {
-    key: "report",
-    title: "Reports",
-    icon: "bar-chart",
-    bg: "#FEE2E2",
-    fg: colors.danger,
-    path: "/attendance-records",
   },
 ];
 
