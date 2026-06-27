@@ -1,8 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
 
 import { DihadiLogo } from "@/src/components/DihadiLogo";
 import { colors } from "@/src/theme/colors";
@@ -56,12 +55,7 @@ export default function Splash() {
       <Animated.View
         style={{ transform: [{ scale }], opacity, alignItems: "center" }}
       >
-        <DihadiLogo size={108} variant="brand" />
-        <Text style={styles.brand}>Dihadi</Text>
-        <View style={styles.tagWrap}>
-          <Ionicons name="scan-outline" size={14} color={colors.brandSoft} />
-          <Text style={styles.tagline}>Face Attendance for Teams</Text>
-        </View>
+        <DihadiLogo size={260} />
       </Animated.View>
 
       <View style={styles.dotsRow}>
