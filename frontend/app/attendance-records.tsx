@@ -1,0 +1,311 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { employees, todayAttendance } from "@/src/data/mockData";
+import { colors, radius } from "@/src/theme/colors";
+
+const DAYS = ["Today", "Yesterday", "This Week", "This Month"];
+
+const STATUS_COLOR = {
+  "On Time": { bg: colors.successSoft, fg: colors.success },
+  Late: { bg: colors.warningSoft, fg: "#B45309" },
+  "Early Out": { bg: colors.infoSoft, fg: colors.info },
+};
+
+export default function AttendanceRecords() {
+  const router = useRouter();
+  const [activeDay, setActiveDay] = useState("Today");
+
+  const present = todayAttendance.length;
+  const absent = employees.length - present;
+  const late = todayAttendance.filter((a) => a.status === "Late").length;
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.iconBtn}
+          testID="records-back-button"
+          hitSlop={10}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Attendance Records</Text>
+          <Text style={styles.subtitle}>
+            {new Date().toLocaleDateString([], {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+            })}
+          </Text>
+        </View>
+        <Pressable
+          style={styles.iconBtn}
+          testID="records-filter-button"
+        >
+          <Ionicons
+            name="options-outline"
+            size={20}
+            color={colors.textPrimary}
+          />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 32 }}
+      >
+        <View style={styles.statsRow}>
+          <StatCard
+            label="Present"
+            value={`${present}`}
+            icon="checkmark-circle"
+            color={colors.success}
+            bg={colors.successSoft}
+          />
+          <StatCard
+            label="Absent"
+            value={`${absent}`}
+            icon="close-circle"
+            color={colors.danger}
+            bg={colors.dangerSoft}
+          />
+          <StatCard
+            label="Late"
+            value={`${late}`}
+            icon="alarm"
+            color="#B45309"
+            bg={colors.warningSoft}
+          />
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          {DAYS.map((d) => {
+            const active = d === activeDay;
+            return (
+              <Pressable
+                key={d}
+                onPress={() => setActiveDay(d)}
+                testID={`record-day-${d.toLowerCase().replace(/\s+/g, "-")}`}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text
+                  style={[styles.chipText, active && { color: colors.white }]}
+                >
+                  {d}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.listWrap}>
+          <Text style={styles.sectionTitle}>Records</Text>
+          {todayAttendance.map((a) => {
+            const c =
+              STATUS_COLOR[a.status as keyof typeof STATUS_COLOR] ||
+              STATUS_COLOR["On Time"];
+            return (
+              <View key={a.id} style={styles.row}>
+                <Image source={{ uri: a.photo }} style={styles.avatar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{a.employeeName}</Text>
+                  <Text style={styles.code}>{a.employeeCode}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <View style={styles.timeRow}>
+                    <Ionicons
+                      name={
+                        a.type === "Check-in"
+                          ? "log-in-outline"
+                          : "log-out-outline"
+                      }
+                      size={12}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={styles.time}>{a.time}</Text>
+                  </View>
+                  <View
+                    style={[styles.statusPill, { backgroundColor: c.bg }]}
+                  >
+                    <Text style={[styles.statusText, { color: c.fg }]}>
+                      {a.status}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+          {employees
+            .filter(
+              (e) =>
+                !todayAttendance.find((a) => a.employeeId === e.id) &&
+                e.status === "Active"
+            )
+            .map((e) => (
+              <View key={e.id} style={styles.row}>
+                <Image source={{ uri: e.photo }} style={styles.avatar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{e.name}</Text>
+                  <Text style={styles.code}>{e.code}</Text>
+                </View>
+                <View style={[styles.statusPill, { backgroundColor: colors.dangerSoft }]}>
+                  <Text style={[styles.statusText, { color: colors.danger }]}>
+                    Absent
+                  </Text>
+                </View>
+              </View>
+            ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  color,
+  bg,
+}: {
+  label: string;
+  value: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  bg: string;
+}) {
+  return (
+    <View style={[styles.statCard, { backgroundColor: bg }]}>
+      <Ionicons name={icon} size={20} color={color} />
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    letterSpacing: -0.4,
+  },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: radius.xl,
+    padding: 14,
+    alignItems: "flex-start",
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+    marginTop: 6,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    marginTop: 2,
+    letterSpacing: 0.4,
+  },
+
+  chipRow: { paddingHorizontal: 20, paddingVertical: 18, gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 999,
+    height: 36,
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+
+  listWrap: { paddingHorizontal: 20 },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  avatar: { width: 44, height: 44, borderRadius: 999 },
+  name: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  code: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  timeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+  },
+  time: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSecondary,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  statusText: { fontSize: 10, fontWeight: "700" },
+});

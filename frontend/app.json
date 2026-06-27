@@ -1,22 +1,27 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Dihadi",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "dihadi",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Recognise employee faces to mark attendance",
+        "NSMicrophoneUsageDescription": "Voice announce attendance in Hindi"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0F172A"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
@@ -31,7 +36,13 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#0F172A"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Recognise employee faces to mark attendance"
         }
       ]
     ],
