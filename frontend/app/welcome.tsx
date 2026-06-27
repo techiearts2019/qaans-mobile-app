@@ -44,7 +44,7 @@ export default function Welcome() {
         <Text style={styles.title}>Effortless face{"\n"}attendance.</Text>
         <Text style={styles.subtitle}>
           Mark check-in & check-out instantly with face recognition. Track your
-          team, salaries and records — all in one place.
+          team, salaries and records all in one place.
         </Text>
 
         <View style={styles.bullets}>
