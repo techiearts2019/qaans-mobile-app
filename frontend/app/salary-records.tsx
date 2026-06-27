@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  monthRow: { paddingHorizontal: 20, paddingVertical: 18, gap: 8 },
+  monthRow: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8, gap: 8 },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   },
   monthChipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
 
-  list: { paddingHorizontal: 20, paddingBottom: 32, gap: 10 },
+  list: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32, gap: 10 },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.xl,
