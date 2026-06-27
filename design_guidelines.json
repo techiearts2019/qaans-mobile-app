@@ -1,0 +1,199 @@
+{
+  "theme": "Light",
+  "archetype": "4 (Swiss & High-Contrast) adapted for Mobile Soft Utility",
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "scale": {
+      "h1": "text-3xl sm:text-4xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm",
+      "tiny": "text-xs font-medium uppercase tracking-[0.05em]"
+    }
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#0F172A",
+      "foreground": "#FFFFFF"
+    },
+    "secondary": {
+      "DEFAULT": "#2563EB",
+      "foreground": "#FFFFFF"
+    },
+    "accent": {
+      "DEFAULT": "#16A34A",
+      "foreground": "#FFFFFF"
+    },
+    "background": "#F8FAFC",
+    "card": "#FFFFFF",
+    "text": {
+      "main": "#0F172A",
+      "muted": "#64748B"
+    },
+    "border": "#E2E8F0",
+    "status": {
+      "success": "#16A34A",
+      "error": "#DC2626",
+      "warning": "#EAB308",
+      "info": "#3B82F6"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "w-full max-w-md mx-auto min-h-screen bg-slate-50 relative overflow-hidden flex flex-col shadow-2xl",
+    "padding": "p-4 sm:p-6",
+    "card_radius": "rounded-2xl",
+    "button_radius": "rounded-xl",
+    "input_radius": "rounded-xl",
+    "bottom_nav_height": "h-16"
+  },
+  "components": {
+    "logo": "A custom CSS-based 'D' monogram. Use a rounded-xl square with bg-blue-600, housing a clean white 'D' crafted using standard text or simple geometric divs. Add a subtle shadow.",
+    "buttons": "Full width for primary mobile actions. h-14, rounded-xl, font-semibold text-lg. Use active scale effect (active:scale-[0.98]).",
+    "cards": "bg-white rounded-2xl p-4 shadow-sm border border-slate-100.",
+    "inputs": "h-14 bg-slate-50 border border-slate-200 rounded-xl px-4 text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all.",
+    "bottom_nav": "Fixed bottom, w-full max-w-md bg-white border-t border-slate-200 flex justify-around items-center h-16 pb-safe z-50.",
+    "feature_grid": "Grid of 2 columns, gap-4. Items: bg-white rounded-2xl p-4 flex flex-col items-center justify-center text-center shadow-sm border border-slate-100 aspect-square.",
+    "avatar": "Circular, rounded-full, object-cover border-2 border-white shadow-sm."
+  },
+  "screens": {
+    "1_splash": {
+      "layout": "flex flex-col items-center justify-center min-h-screen bg-slate-900",
+      "elements": [
+        "Custom Dihadi 'D' Monogram Logo (White/Blue)",
+        "Brand Name 'Dihadi' in text-4xl text-white font-bold mt-4",
+        "Minimal spinning loader or pulsing dot at the bottom"
+      ]
+    },
+    "2_welcome": {
+      "layout": "flex flex-col min-h-screen bg-white relative",
+      "elements": [
+        "Hero Image (Abstract Blue Wavy Background) covering top 50%",
+        "Bottom 50% white rounded-t-3xl -mt-6 p-6 z-10 flex flex-col",
+        "Heading: 'Effortless Face Attendance'",
+        "Subtitle: 'Manage your workforce with secure facial recognition. Quick, accurate, and secure.' (text-slate-500)",
+        "Primary Button: 'Get Started' pinned to bottom"
+      ]
+    },
+    "3_login": {
+      "layout": "flex flex-col min-h-screen bg-white p-6 justify-center",
+      "elements": [
+        "Back button (optional at top left)",
+        "Heading: 'Welcome back'",
+        "Subtitle: 'Enter your email to login to your supervisor account'",
+        "Email Input Field",
+        "Button: 'Send OTP'",
+        "OTP Screen variant: 4-6 box inputs for OTP, 'Verify OTP' button"
+      ]
+    },
+    "4_dashboard": {
+      "layout": "flex flex-col min-h-screen bg-slate-50 pb-20",
+      "elements": [
+        "Header: Greeting 'Good morning, Supervisor', Date, User Avatar",
+        "Today's Stats Card: '45/50 Present Today' with progress bar, bg-blue-600 text-white",
+        "Feature Grid (2x2): 'Face Attendance' (Camera Icon, primary accent), 'Add Employee' (Plus Icon), 'Employees List' (Users Icon), 'Salary Records' (Wallet/File Icon)",
+        "Recent Activity List: Short list of recently marked attendees"
+      ]
+    },
+    "5_face_attendance": {
+      "layout": "flex flex-col min-h-screen bg-black relative",
+      "elements": [
+        "Full screen live camera view (simulated with a blurred background image and a clear center box)",
+        "Scanner animation: A horizontal green line moving up and down the face detection box",
+        "Overlay Header: 'Scanning Face...', Back button",
+        "Success Modal/Bottom Sheet: Pops up with matched employee avatar, Name in English 'Ramesh Kumar' and Hindi 'रमेश कुमार', Employee Code, Green checkmark, 'Attendance Marked' text"
+      ]
+    },
+    "6_add_employee": {
+      "layout": "flex flex-col min-h-screen bg-slate-50 pb-20",
+      "elements": [
+        "Header with Back button, Title 'Add Employee'",
+        "Scrollable content",
+        "Photo Capture Circle: 'Tap to add photo' with camera icon",
+        "Section 1: Personal Details (First Name, Last Name, DOB, Gender Dropdown)",
+        "Section 2: Communication Details (Phone, Email, Address)",
+        "Section 3: Document Details (Aadhaar Number, PAN)",
+        "Fixed bottom 'Save Employee' primary button"
+      ]
+    },
+    "7_employees_list": {
+      "layout": "flex flex-col min-h-screen bg-slate-50 pb-20",
+      "elements": [
+        "Header with Back button, Title 'Employees'",
+        "Search bar: 'Search by name or code'",
+        "Filter chips: 'All', 'Active', 'Inactive'",
+        "List of employee cards: Avatar, Name, Code, Status Badge (green/red dot or pill)",
+        "Swipe to delete or tap to view details"
+      ]
+    },
+    "8_profile": {
+      "layout": "flex flex-col min-h-screen bg-slate-50 pb-20",
+      "elements": [
+        "Header: 'Profile'",
+        "User Info Card: Large Avatar, Name, Supervisor Code, Email",
+        "Menu List: 'Edit Profile', 'App Settings', 'Help & Support', 'Log Out'",
+        "Log Out button in red text"
+      ]
+    },
+    "9_notifications": {
+      "layout": "flex flex-col min-h-screen bg-slate-50 pb-20",
+      "elements": [
+        "Header: 'Notifications', 'Mark all read' action",
+        "List of notification cards: Icon (bell/check), Title ('Attendance marked for Ramesh'), Time ('10 mins ago'), subtle background for unread"
+      ]
+    },
+    "10_bottom_nav": {
+      "layout": "Fixed bottom, z-50",
+      "elements": [
+        "4 Tabs: Home (Dashboard), Scan (Face Attendance - prominent middle button), Bell (Notifications), User (Profile)",
+        "Active tab colored blue-600, inactive slate-400"
+      ]
+    }
+  },
+  "media_urls": {
+    "backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1585854467604-cf2080ccef31?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGNsZWFuJTIwbW9kZXJuJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODI1NTEzODB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract clean blue background for Welcome/Intro screen upper half"
+      }
+    ],
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1646227655685-a530813759b3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwzfHx3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODI1NTEzODB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Employee Avatar 1"
+      },
+      {
+        "url": "https://images.pexels.com/photos/12576220/pexels-photo-12576220.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Employee Avatar 2"
+      },
+      {
+        "url": "https://images.pexels.com/photos/9227535/pexels-photo-9227535.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Employee Avatar 3"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1679679811837-c28b2586f533?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwyfHx3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODI1NTEzODB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Employee Avatar 4"
+      },
+      {
+        "url": "https://images.pexels.com/photos/37556467/pexels-photo-37556467.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Employee Avatar 5"
+      }
+    ]
+  },
+  "accessibility_and_testing": {
+    "data_testid_requirement": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case, role-based. Example: data-testid='login-submit-button', data-testid='employee-list-item'.",
+    "contrast": "Text must meet minimum 4.5:1 ratio.",
+    "touch_targets": "Minimum touch target size for mobile should be 44x44px. Buttons should be h-14."
+  },
+  "instructions_to_main_agent": [
+    "Build the application as a responsive web app but restrict the main layout to look like a mobile app (w-full max-w-md mx-auto min-h-screen relative shadow-2xl).",
+    "Implement state management for the screens to flow logically (Splash -> Welcome -> Login -> OTP -> Dashboard).",
+    "Use lucide-react for all icons.",
+    "Implement the Face Attendance screen using CSS animations (a moving line over a bounding box on a static image) to simulate scanning, followed by a simulated success state showing the matched employee name in English and Hindi.",
+    "Ensure the bottom navigation is fixed at the bottom and functional.",
+    "Mock all data locally (no backend needed).",
+    "Do NOT use HTML input type='date', use Shadcn Calendar if available or standard styled inputs."
+  ]
+}
