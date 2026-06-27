@@ -48,7 +48,7 @@ export default function SalaryRecords() {
   const [month, setMonth] = useState("Feb 26");
 
   const totalPayout = ROWS.reduce(
-    (s, r) => s + r.daysWorked * r.daily + r.bonus - r.deductions,
+    (s, r) => s + r.daysWorked * r.daily - r.deductions,
     0
   );
   const paid = ROWS.filter((r) => r.status === "Paid").length;
@@ -58,56 +58,57 @@ export default function SalaryRecords() {
       <LinearGradient
         colors={[colors.primary, "#1E293B"]}
         style={styles.headerBg}
-      />
-      <SafeAreaView edges={["top"]} style={{ paddingHorizontal: 16 }}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconBtn}
-            testID="salary-back-button"
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.white} />
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title}>Salary Records</Text>
-            <Text style={styles.subtitle}>Monthly payroll overview</Text>
+      >
+        <SafeAreaView edges={["top"]} style={{ paddingHorizontal: 16 }}>
+          <View style={styles.headerRow}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.iconBtn}
+              testID="salary-back-button"
+              hitSlop={10}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.white} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Salary Records</Text>
+              <Text style={styles.subtitle}>Monthly payroll overview</Text>
+            </View>
+            <Pressable style={styles.iconBtn} testID="salary-export-button">
+              <Ionicons
+                name="download-outline"
+                size={20}
+                color={colors.white}
+              />
+            </Pressable>
           </View>
-          <Pressable style={styles.iconBtn} testID="salary-export-button">
-            <Ionicons
-              name="download-outline"
-              size={20}
-              color={colors.white}
-            />
-          </Pressable>
-        </View>
 
-        <View style={styles.summary}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.summaryLabel}>Total payout · {month}</Text>
-            <Text style={styles.summaryValue}>
-              ₹ {totalPayout.toLocaleString("en-IN")}
-            </Text>
-            <View style={styles.summaryMetaRow}>
-              <View style={styles.summaryMetaItem}>
-                <View style={[styles.smallDot, { backgroundColor: colors.success }]} />
-                <Text style={styles.summaryMetaText}>
-                  {paid} Paid
-                </Text>
-              </View>
-              <View style={styles.summaryMetaItem}>
-                <View style={[styles.smallDot, { backgroundColor: "#FBBF24" }]} />
-                <Text style={styles.summaryMetaText}>
-                  {ROWS.length - paid} Pending
-                </Text>
+          <View style={styles.summary}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.summaryLabel}>Total payout · {month}</Text>
+              <Text style={styles.summaryValue}>
+                ₹ {totalPayout.toLocaleString("en-IN")}
+              </Text>
+              <View style={styles.summaryMetaRow}>
+                <View style={styles.summaryMetaItem}>
+                  <View style={[styles.smallDot, { backgroundColor: colors.success }]} />
+                  <Text style={styles.summaryMetaText}>
+                    {paid} Paid
+                  </Text>
+                </View>
+                <View style={styles.summaryMetaItem}>
+                  <View style={[styles.smallDot, { backgroundColor: "#FBBF24" }]} />
+                  <Text style={styles.summaryMetaText}>
+                    {ROWS.length - paid} Pending
+                  </Text>
+                </View>
               </View>
             </View>
+            <View style={styles.summaryIcon}>
+              <Ionicons name="wallet" size={26} color={colors.white} />
+            </View>
           </View>
-          <View style={styles.summaryIcon}>
-            <Ionicons name="wallet" size={26} color={colors.white} />
-          </View>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </LinearGradient>
 
       <ScrollView
         horizontal
@@ -143,7 +144,7 @@ export default function SalaryRecords() {
         {ROWS.map((r) => {
           const emp = employees.find((e) => e.id === r.empId);
           if (!emp) return null;
-          const total = r.daysWorked * r.daily + r.bonus - r.deductions;
+          const total = r.daysWorked * r.daily - r.deductions;
           const meta = STATUS_META[r.status];
           return (
             <View key={r.empId} style={styles.card}>
@@ -166,8 +167,6 @@ export default function SalaryRecords() {
                 <Meta label="Days" value={`${r.daysWorked}`} />
                 <View style={styles.metaSep} />
                 <Meta label="Rate/Day" value={`₹${r.daily}`} />
-                <View style={styles.metaSep} />
-                <Meta label="Bonus" value={`₹${r.bonus}`} />
                 <View style={styles.metaSep} />
                 <Meta
                   label="Deduct"
@@ -210,11 +209,7 @@ function Meta({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   headerBg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 230,
+    paddingBottom: 24,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
@@ -276,7 +271,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  monthRow: { padding: 20, gap: 8 },
+  monthRow: { paddingHorizontal: 20, paddingVertical: 18, gap: 8 },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
