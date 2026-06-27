@@ -103,9 +103,9 @@ const styles = StyleSheet.create({
   heroContent: {
     flex: 1,
     paddingHorizontal: 24,
-    justifyContent: "space-between",
     paddingTop: 12,
     paddingBottom: 24,
+    gap: 18,
   },
   brandRow: {
     flexDirection: "row",
