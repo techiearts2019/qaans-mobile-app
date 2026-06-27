@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  monthRow: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 46, gap: 8 },
+  monthRow: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 46, gap: 8 },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
