@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -25,10 +26,37 @@ const STATUS_COLOR = {
 export default function AttendanceRecords() {
   const router = useRouter();
   const [activeDay, setActiveDay] = useState("Today");
+  const [query, setQuery] = useState("");
 
   const present = todayAttendance.length;
   const absent = employees.length - present;
   const late = todayAttendance.filter((a) => a.status === "Late").length;
+
+  const q = query.trim().toLowerCase();
+  const filteredAttendance = useMemo(
+    () =>
+      todayAttendance.filter(
+        (a) =>
+          !q ||
+          a.employeeName.toLowerCase().includes(q) ||
+          a.employeeCode.toLowerCase().includes(q)
+      ),
+    [q]
+  );
+  const filteredAbsent = useMemo(
+    () =>
+      employees.filter(
+        (e) =>
+          !todayAttendance.find((a) => a.employeeId === e.id) &&
+          e.status === "Active" &&
+          (!q ||
+            e.name.toLowerCase().includes(q) ||
+            e.code.toLowerCase().includes(q))
+      ),
+    [q]
+  );
+  const noResults =
+    q && filteredAttendance.length === 0 && filteredAbsent.length === 0;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -61,6 +89,29 @@ export default function AttendanceRecords() {
             color={colors.textPrimary}
           />
         </Pressable>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput
+          testID="records-search-input"
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search employee by name or code"
+          placeholderTextColor={colors.textMuted}
+          style={styles.searchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {query ? (
+          <Pressable
+            onPress={() => setQuery("")}
+            hitSlop={10}
+            testID="records-search-clear"
+          >
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -117,7 +168,7 @@ export default function AttendanceRecords() {
 
         <View style={styles.listWrap}>
           <Text style={styles.sectionTitle}>Records</Text>
-          {todayAttendance.map((a) => {
+          {filteredAttendance.map((a) => {
             const c =
               STATUS_COLOR[a.status as keyof typeof STATUS_COLOR] ||
               STATUS_COLOR["On Time"];
@@ -152,26 +203,30 @@ export default function AttendanceRecords() {
               </View>
             );
           })}
-          {employees
-            .filter(
-              (e) =>
-                !todayAttendance.find((a) => a.employeeId === e.id) &&
-                e.status === "Active"
-            )
-            .map((e) => (
-              <View key={e.id} style={styles.row}>
-                <Image source={{ uri: e.photo }} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{e.name}</Text>
-                  <Text style={styles.code}>{e.code}</Text>
-                </View>
-                <View style={[styles.statusPill, { backgroundColor: colors.dangerSoft }]}>
-                  <Text style={[styles.statusText, { color: colors.danger }]}>
-                    Absent
-                  </Text>
-                </View>
+          {filteredAbsent.map((e) => (
+            <View key={e.id} style={styles.row}>
+              <Image source={{ uri: e.photo }} style={styles.avatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{e.name}</Text>
+                <Text style={styles.code}>{e.code}</Text>
               </View>
-            ))}
+              <View style={[styles.statusPill, { backgroundColor: colors.dangerSoft }]}>
+                <Text style={[styles.statusText, { color: colors.danger }]}>
+                  Absent
+                </Text>
+              </View>
+            </View>
+          ))}
+          {noResults ? (
+            <View style={styles.empty}>
+              <Ionicons
+                name="search-outline"
+                size={36}
+                color={colors.textMuted}
+              />
+              <Text style={styles.emptyText}>No employees found</Text>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -224,6 +279,25 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    height: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary },
+
+  empty: { alignItems: "center", paddingVertical: 40 },
+  emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 12 },
 
   statsRow: {
     flexDirection: "row",
