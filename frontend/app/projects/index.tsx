@@ -26,10 +26,10 @@ const FILTERS: ("All" | ProjectStatus)[] = [
   "Completed",
 ];
 
-const STATUS_META: Record<ProjectStatus, { bg: string; fg: string }> = {
-  Active: { bg: colors.successSoft, fg: colors.success },
-  "On Hold": { bg: colors.warningSoft, fg: "#B45309" },
-  Completed: { bg: colors.infoSoft, fg: colors.info },
+const STATUS_META: Record<ProjectStatus, { bg: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  Active: { bg: colors.successSoft, fg: colors.success, icon: "ellipse" },
+  "On Hold": { bg: colors.warningSoft, fg: "#B45309", icon: "pause" },
+  Completed: { bg: colors.infoSoft, fg: colors.info, icon: "checkmark" },
 };
 
 export default function ProjectsList() {
@@ -68,9 +68,6 @@ export default function ProjectsList() {
             {projects.length} projects · {counts.Active} active
           </Text>
         </View>
-        <Pressable style={styles.addBtn} testID="projects-add-button">
-          <Ionicons name="add" size={20} color={colors.white} />
-        </Pressable>
       </View>
 
       <ScrollView
@@ -117,7 +114,7 @@ export default function ProjectsList() {
         showsVerticalScrollIndicator={false}
       >
         {list.map((p) => (
-          <ProjectCard
+          <ProjectRow
             key={p.id}
             project={p}
             onPress={() => router.push(`/projects/${p.id}`)}
@@ -139,7 +136,7 @@ export default function ProjectsList() {
   );
 }
 
-function ProjectCard({
+function ProjectRow({
   project,
   onPress,
 }: {
@@ -154,46 +151,43 @@ function ProjectCard({
 
   return (
     <Pressable
-      style={styles.card}
+      style={styles.row}
       testID={`project-card-${project.id}`}
       onPress={onPress}
     >
-      <View style={styles.cover}>
-        <Image source={{ uri: project.cover }} style={StyleSheet.absoluteFill} />
-        <View
-          style={[
-            styles.statusPill,
-            { backgroundColor: meta.bg, position: "absolute", top: 12, right: 12 },
-          ]}
-        >
-          <View style={[styles.statusDot, { backgroundColor: meta.fg }]} />
-          <Text style={[styles.statusText, { color: meta.fg }]}>
-            {project.status}
-          </Text>
-        </View>
+      <View style={[styles.iconBox, { backgroundColor: meta.bg }]}>
+        <Ionicons name="briefcase" size={20} color={meta.fg} />
       </View>
 
-      <View style={styles.cardBody}>
-        <Text style={styles.cardName} numberOfLines={1}>
-          {project.name}
-        </Text>
+      <View style={{ flex: 1 }}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowName} numberOfLines={1}>
+            {project.name}
+          </Text>
+          <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
+            <View style={[styles.statusDot, { backgroundColor: meta.fg }]} />
+            <Text style={[styles.statusText, { color: meta.fg }]}>
+              {project.status}
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.metaRow}>
           <Ionicons
             name="location-outline"
-            size={13}
-            color={colors.textSecondary}
+            size={12}
+            color={colors.textMuted}
           />
           <Text style={styles.metaText} numberOfLines={1}>
             {project.location}
           </Text>
-        </View>
-        <View style={styles.metaRow}>
+          <View style={styles.dotSep} />
           <Ionicons
             name="calendar-outline"
-            size={13}
-            color={colors.textSecondary}
+            size={12}
+            color={colors.textMuted}
           />
-          <Text style={styles.metaText}>Started {project.startDate}</Text>
+          <Text style={styles.metaText}>{project.startDate}</Text>
         </View>
 
         <View style={styles.footerRow}>
@@ -204,7 +198,7 @@ function ProjectCard({
                 source={{ uri: e.photo }}
                 style={[
                   styles.stackAvatar,
-                  { marginLeft: i === 0 ? 0 : -10 },
+                  { marginLeft: i === 0 ? 0 : -8 },
                 ]}
               />
             ))}
@@ -212,7 +206,7 @@ function ProjectCard({
               <View style={styles.stackEmpty}>
                 <Ionicons
                   name="person-outline"
-                  size={12}
+                  size={11}
                   color={colors.textMuted}
                 />
               </View>
@@ -220,11 +214,18 @@ function ProjectCard({
           </View>
           <Text style={styles.allocText}>
             {allocated === 0
-              ? "No employees allocated"
-              : `${allocated} ${allocated === 1 ? "employee" : "employees"} allocated`}
+              ? "No employees"
+              : `${allocated} ${allocated === 1 ? "employee" : "employees"}`}
           </Text>
         </View>
       </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={colors.textMuted}
+        style={{ marginLeft: 4 }}
+      />
     </Pressable>
   );
 }
@@ -246,14 +247,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   title: {
     fontSize: 22,
     fontWeight: "800",
@@ -262,7 +255,7 @@ const styles = StyleSheet.create({
   },
   subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
-  chipRow: { paddingHorizontal: 20, paddingVertical: 12, gap: 8 },
+  chipRow: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 8 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
@@ -292,77 +285,94 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  list: { padding: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
-  card: {
+  list: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40 },
+
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
     backgroundColor: colors.card,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    overflow: "hidden",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  cover: {
-    width: "100%",
-    height: 120,
-    backgroundColor: colors.surfaceAlt,
-    position: "relative",
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  rowName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    letterSpacing: -0.2,
   },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 999,
   },
-  statusDot: { width: 6, height: 6, borderRadius: 999 },
-  statusText: { fontSize: 11, fontWeight: "700" },
-  cardBody: { padding: 14 },
-  cardName: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: colors.textPrimary,
-    letterSpacing: -0.3,
-  },
+  statusDot: { width: 5, height: 5, borderRadius: 999 },
+  statusText: { fontSize: 10, fontWeight: "700" },
+
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    marginTop: 6,
+    gap: 4,
+    marginTop: 4,
+    flexWrap: "wrap",
   },
   metaText: {
-    fontSize: 12,
-    color: colors.textSecondary,
+    fontSize: 11,
+    color: colors.textMuted,
     fontWeight: "500",
   },
+  dotSep: {
+    width: 3,
+    height: 3,
+    backgroundColor: colors.borderStrong,
+    borderRadius: 999,
+    marginHorizontal: 4,
+  },
+
   footerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    gap: 8,
+    marginTop: 8,
   },
   avatarStack: { flexDirection: "row", alignItems: "center" },
   stackAvatar: {
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
     borderRadius: 999,
     borderWidth: 2,
     borderColor: colors.white,
   },
   stackEmpty: {
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
     borderRadius: 999,
     backgroundColor: colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
   allocText: {
-    flex: 1,
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textSecondary,
     fontWeight: "600",
   },
