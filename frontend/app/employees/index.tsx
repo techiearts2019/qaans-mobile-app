@@ -111,6 +111,7 @@ export default function EmployeesList() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.chipScroll}
         contentContainerStyle={styles.chipRow}
       >
         {FILTERS.map((f) => {
@@ -266,6 +267,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary },
+  chipScroll: { flexGrow: 0, flexShrink: 0 },
   chipRow: {
     paddingHorizontal: 20,
     paddingVertical: 14,
