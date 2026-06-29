@@ -73,6 +73,7 @@ export default function ProjectsList() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.chipScroll}
         contentContainerStyle={styles.chipRow}
       >
         {FILTERS.map((f) => {
@@ -255,6 +256,7 @@ const styles = StyleSheet.create({
   },
   subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
+  chipScroll: { flexGrow: 0, flexShrink: 0 },
   chipRow: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 8 },
   chip: {
     flexDirection: "row",
