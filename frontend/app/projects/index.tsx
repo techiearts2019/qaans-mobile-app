@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -35,6 +36,7 @@ const STATUS_META: Record<ProjectStatus, { bg: string; fg: string; icon: keyof t
 export default function ProjectsList() {
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [query, setQuery] = useState("");
 
   const counts = useMemo(() => {
     return {
@@ -45,11 +47,17 @@ export default function ProjectsList() {
     } as Record<string, number>;
   }, []);
 
-  const list = useMemo(
-    () =>
-      filter === "All" ? projects : projects.filter((p) => p.status === filter),
-    [filter]
-  );
+  const list = useMemo(() => {
+    return projects.filter((p) => {
+      const matchesFilter = filter === "All" || p.status === filter;
+      const q = query.trim().toLowerCase();
+      const matchesQuery =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.location.toLowerCase().includes(q);
+      return matchesFilter && matchesQuery;
+    });
+  }, [filter, query]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -68,6 +76,33 @@ export default function ProjectsList() {
             {projects.length} projects · {counts.Active} active
           </Text>
         </View>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput
+          testID="projects-search-input"
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search projects by name or location"
+          placeholderTextColor={colors.textMuted}
+          style={styles.searchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {query ? (
+          <Pressable
+            onPress={() => setQuery("")}
+            hitSlop={10}
+            testID="projects-search-clear"
+          >
+            <Ionicons
+              name="close-circle"
+              size={18}
+              color={colors.textMuted}
+            />
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -255,6 +290,22 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    height: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary },
 
   chipScroll: { flexGrow: 0, flexShrink: 0 },
   chipRow: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 8 },
