@@ -3,9 +3,9 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Speech from "expo-speech";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -30,11 +30,31 @@ export default function FaceAttendance() {
   const [phase, setPhase] = useState<Phase>("scanning");
   const [matchedIndex, setMatchedIndex] = useState(0);
   const [action, setAction] = useState<"Check-in" | "Check-out">("Check-in");
+  const [isFocused, setIsFocused] = useState(false);
 
   // animations
   const scanLine = useRef(new Animated.Value(0)).current;
   const ringPulse = useRef(new Animated.Value(0)).current;
   const cornerOpacity = useRef(new Animated.Value(0.7)).current;
+
+  // Pause / resume scanning when the screen gains or loses focus
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      setPhase("scanning");
+      return () => {
+        // Screen lost focus — stop voice, close any match modal,
+        // and pause the scanning logic + camera.
+        setIsFocused(false);
+        setPhase("idle");
+        try {
+          Speech.stop();
+        } catch {
+          // noop
+        }
+      };
+    }, [])
+  );
 
   useEffect(() => {
     if (!permission) requestPermission();
@@ -93,6 +113,7 @@ export default function FaceAttendance() {
 
   // simulated face match every 4-5s
   useEffect(() => {
+    if (!isFocused) return;
     if (phase !== "scanning") return;
     const t = setTimeout(() => {
       const idx = Math.floor(Math.random() * employees.length);
@@ -109,7 +130,7 @@ export default function FaceAttendance() {
       }
     }, 4200);
     return () => clearTimeout(t);
-  }, [phase]);
+  }, [phase, isFocused]);
 
   const resumeScan = () => {
     Speech.stop();
@@ -167,11 +188,15 @@ export default function FaceAttendance() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing={facing}
-        testID="face-camera-view"
-      />
+      {isFocused ? (
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          testID="face-camera-view"
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.black }]} />
+      )}
       {/* darken overlay */}
       <LinearGradient
         colors={["rgba(0,0,0,0.55)", "rgba(0,0,0,0.2)", "rgba(0,0,0,0.85)"]}
