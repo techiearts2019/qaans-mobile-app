@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -67,66 +66,73 @@ export default function ProjectDetail() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.heroWrap}>
-        <Image source={{ uri: baseProject.cover }} style={StyleSheet.absoluteFill} />
-        <LinearGradient
-          colors={["rgba(15,23,42,0.4)", "rgba(15,23,42,0.9)"]}
-          style={StyleSheet.absoluteFill}
-        />
-        <SafeAreaView edges={["top"]} style={styles.heroTopRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconBtn}
-            testID="project-detail-back"
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.white} />
-          </Pressable>
-          <View style={[styles.heroStatusPill, { backgroundColor: meta.bg }]}>
-            <View style={[styles.statusDot, { backgroundColor: meta.fg }]} />
-            <Text style={[styles.statusText, { color: meta.fg }]}>
-              {baseProject.status}
-            </Text>
-          </View>
-          <Pressable style={styles.iconBtn} testID="project-detail-more">
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={20}
-              color={colors.white}
-            />
-          </Pressable>
-        </SafeAreaView>
-
-        <View style={styles.heroBottom}>
-          <Text style={styles.heroName}>{baseProject.name}</Text>
-          <View style={styles.heroMetaRow}>
-            <View style={styles.heroMetaItem}>
-              <Ionicons
-                name="location-outline"
-                size={14}
-                color={colors.brandSoft}
-              />
-              <Text style={styles.heroMetaText}>{baseProject.location}</Text>
-            </View>
-            <View style={styles.heroMetaItem}>
-              <Ionicons
-                name="calendar-outline"
-                size={14}
-                color={colors.brandSoft}
-              />
-              <Text style={styles.heroMetaText}>
-                Started {baseProject.startDate}
-              </Text>
-            </View>
-          </View>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.iconBtn}
+          testID="project-detail-back"
+          hitSlop={10}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title} numberOfLines={1}>
+            {baseProject.name}
+          </Text>
+          <Text style={styles.subtitle}>
+            {baseProject.location} · {allocated.length}{" "}
+            {allocated.length === 1 ? "employee" : "employees"}
+          </Text>
         </View>
+        <Pressable style={styles.iconBtn} testID="project-detail-more">
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={20}
+            color={colors.textPrimary}
+          />
+        </Pressable>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.infoCard}>
+          <View style={styles.infoTopRow}>
+            <View style={styles.briefIcon}>
+              <Ionicons name="briefcase" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoName}>{baseProject.name}</Text>
+              <View style={styles.infoMetaRow}>
+                <Ionicons
+                  name="location-outline"
+                  size={12}
+                  color={colors.textMuted}
+                />
+                <Text style={styles.infoMetaText}>{baseProject.location}</Text>
+              </View>
+              <View style={styles.infoMetaRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={12}
+                  color={colors.textMuted}
+                />
+                <Text style={styles.infoMetaText}>
+                  Started {baseProject.startDate}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
+              <View style={[styles.statusDot, { backgroundColor: meta.fg }]} />
+              <Text style={[styles.statusText, { color: meta.fg }]}>
+                {baseProject.status}
+              </Text>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.statsRow}>
           <StatBox
             label="Allocated"
@@ -211,7 +217,9 @@ export default function ProjectDetail() {
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>Allocate to {baseProject.name}</Text>
+            <Text style={styles.sheetTitle}>
+              Allocate to {baseProject.name}
+            </Text>
             <Pressable
               onPress={() => setPickerOpen(false)}
               testID="allocate-sheet-close"
@@ -265,7 +273,7 @@ export default function ProjectDetail() {
           />
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -293,59 +301,77 @@ function StatBox({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  heroWrap: {
-    height: 260,
-    width: "100%",
-    overflow: "hidden",
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-  },
-  heroTopRow: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingVertical: 12,
+    gap: 12,
   },
   iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
   },
-  heroStatusPill: {
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    letterSpacing: -0.4,
+  },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  scroll: { padding: 20, paddingTop: 4, paddingBottom: 32 },
+
+  infoCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 16,
+  },
+  infoTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  briefIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.brandSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  infoMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 4,
+    marginTop: 4,
+  },
+  infoMetaText: { fontSize: 12, color: colors.textSecondary, fontWeight: "500" },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
   },
   statusDot: { width: 6, height: 6, borderRadius: 999 },
   statusText: { fontSize: 11, fontWeight: "700" },
-  heroBottom: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 18,
-    paddingHorizontal: 24,
-  },
-  heroName: {
-    color: colors.white,
-    fontSize: 26,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  heroMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
-  heroMetaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  heroMetaText: { color: "#E2E8F0", fontSize: 12, fontWeight: "600" },
 
-  scroll: { padding: 20, paddingBottom: 32 },
-  statsRow: { flexDirection: "row", gap: 10, marginTop: -28, marginBottom: 18 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 18 },
   statBox: {
     flex: 1,
     borderRadius: radius.lg,
@@ -389,7 +415,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   addAllocText: { color: colors.brand, fontWeight: "700", fontSize: 12 },
-  title: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
 
   empRow: {
     flexDirection: "row",
