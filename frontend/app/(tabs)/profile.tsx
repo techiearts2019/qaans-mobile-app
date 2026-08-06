@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import { employees, supervisor } from "@/src/data/mockData";
+import { api, Employee, Supervisor } from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 const MENU: {
@@ -64,7 +66,40 @@ const MENU: {
 
 export default function Profile() {
   const router = useRouter();
+  const [supervisor, setSupervisor] = useState<Supervisor | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const [sup, emps] = await Promise.all([
+        api.supervisor(),
+        api.listEmployees(),
+      ]);
+      setSupervisor(sup);
+      setEmployees(emps);
+    } catch (e) {
+      console.warn("profile load failed", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
   const activeCount = employees.filter((e) => e.status === "Active").length;
+
+  if (loading || !supervisor) {
+    return (
+      <View style={[styles.container, { alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator color={colors.brand} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container} testID="profile-screen">
@@ -96,7 +131,7 @@ export default function Profile() {
           <View style={styles.avatarRow}>
             <View style={styles.avatarWrap}>
               <Image
-                source={{ uri: supervisor.photo }}
+                source={{ uri: supervisor.photo ?? undefined }}
                 style={styles.avatar}
               />
               <View style={styles.verifiedBadge}>

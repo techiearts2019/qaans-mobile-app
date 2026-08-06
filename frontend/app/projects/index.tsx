@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,11 +15,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
+  api,
+  Employee,
   Project,
   ProjectStatus,
-  employees,
-  projects,
-} from "@/src/data/mockData";
+} from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const FILTERS: ("All" | ProjectStatus)[] = [
@@ -37,27 +39,53 @@ export default function ProjectsList() {
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [query, setQuery] = useState("");
+  const [items, setItems] = useState<Project[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [projs, emps] = await Promise.all([
+        api.listProjects(),
+        api.listEmployees(),
+      ]);
+      setItems(projs);
+      setEmployees(emps);
+    } catch (e) {
+      console.warn("projects load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const counts = useMemo(() => {
     return {
-      All: projects.length,
-      Active: projects.filter((p) => p.status === "Active").length,
-      "On Hold": projects.filter((p) => p.status === "On Hold").length,
-      Completed: projects.filter((p) => p.status === "Completed").length,
+      All: items.length,
+      Active: items.filter((p) => p.status === "Active").length,
+      "On Hold": items.filter((p) => p.status === "On Hold").length,
+      Completed: items.filter((p) => p.status === "Completed").length,
     } as Record<string, number>;
-  }, []);
+  }, [items]);
 
   const list = useMemo(() => {
-    return projects.filter((p) => {
+    return items.filter((p) => {
       const matchesFilter = filter === "All" || p.status === filter;
       const q = query.trim().toLowerCase();
       const matchesQuery =
         !q ||
         p.name.toLowerCase().includes(q) ||
-        p.location.toLowerCase().includes(q);
+        (p.location ?? "").toLowerCase().includes(q);
       return matchesFilter && matchesQuery;
     });
-  }, [filter, query]);
+  }, [filter, query, items]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -73,7 +101,7 @@ export default function ProjectsList() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Projects</Text>
           <Text style={styles.subtitle}>
-            {projects.length} projects · {counts.Active} active
+            {items.length} projects · {counts.Active} active
           </Text>
         </View>
       </View>
@@ -148,23 +176,40 @@ export default function ProjectsList() {
       <ScrollView
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={colors.brand}
+          />
+        }
       >
         {list.map((p) => (
           <ProjectRow
             key={p.id}
             project={p}
+            employees={employees}
             onPress={() => router.push(`/projects/${p.id}`)}
           />
         ))}
 
         {list.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons
-              name="briefcase-outline"
-              size={36}
-              color={colors.textMuted}
-            />
-            <Text style={styles.emptyText}>No projects in this list</Text>
+            {loading ? (
+              <ActivityIndicator color={colors.brand} />
+            ) : (
+              <Ionicons
+                name="briefcase-outline"
+                size={36}
+                color={colors.textMuted}
+              />
+            )}
+            <Text style={styles.emptyText}>
+              {loading ? "Loading projects…" : "No projects in this list"}
+            </Text>
           </View>
         ) : null}
       </ScrollView>
@@ -174,15 +219,17 @@ export default function ProjectsList() {
 
 function ProjectRow({
   project,
+  employees,
   onPress,
 }: {
   project: Project;
+  employees: Employee[];
   onPress: () => void;
 }) {
   const meta = STATUS_META[project.status];
-  const allocated = project.allocatedEmployeeIds.length;
+  const allocated = project.allocated_employee_ids.length;
   const stackEmps = employees.filter((e) =>
-    project.allocatedEmployeeIds.includes(e.id)
+    project.allocated_employee_ids.includes(e.id)
   );
 
   return (
@@ -231,7 +278,7 @@ function ProjectRow({
             {stackEmps.slice(0, 3).map((e, i) => (
               <Image
                 key={e.id}
-                source={{ uri: e.photo }}
+                source={{ uri: e.photo ?? undefined }}
                 style={[
                   styles.stackAvatar,
                   { marginLeft: i === 0 ? 0 : -8 },

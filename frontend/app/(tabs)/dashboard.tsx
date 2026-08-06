@@ -1,10 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,10 +16,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-  employees,
-  supervisor,
-  todayAttendance,
-} from "@/src/data/mockData";
+  api,
+  AttendanceEntry,
+  Employee,
+  Supervisor,
+} from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 const FEATURES: {
@@ -81,9 +85,52 @@ const FEATURES: {
 
 export default function Dashboard() {
   const router = useRouter();
+  const [supervisor, setSupervisor] = useState<Supervisor | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [sup, emps, att] = await Promise.all([
+        api.supervisor(),
+        api.listEmployees(),
+        api.todayAttendance(),
+      ]);
+      setSupervisor(sup);
+      setEmployees(emps);
+      setTodayAttendance(att);
+    } catch (e) {
+      console.warn("Dashboard load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
   const presentToday = todayAttendance.length;
   const totalEmployees = employees.length;
   const greeting = getGreeting();
+
+  if (loading || !supervisor) {
+    return (
+      <View style={[styles.container, styles.loadingCenter]}>
+        <ActivityIndicator color={colors.brand} />
+        <Text style={styles.loadingText}>Loading dashboard…</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container} testID="dashboard-screen">
@@ -136,14 +183,14 @@ export default function Dashboard() {
               <Text style={styles.statTitle}>Today&apos;s Attendance</Text>
               <Text style={styles.statValue}>
                 {presentToday}
-                <Text style={styles.statTotal}>/{totalEmployees}</Text>
+                <Text style={styles.statTotal}>/{Math.max(totalEmployees, 1)}</Text>
               </Text>
               <Text style={styles.statSub}>Employees checked in</Text>
               <View style={styles.progressBar}>
                 <View
                   style={[
                     styles.progressFill,
-                    { width: `${(presentToday / totalEmployees) * 100}%` },
+                    { width: `${(presentToday / Math.max(totalEmployees, 1)) * 100}%` },
                   ]}
                 />
               </View>
@@ -163,6 +210,16 @@ export default function Dashboard() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={colors.brand}
+          />
+        }
       >
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -210,9 +267,9 @@ export default function Dashboard() {
             <View key={a.id} style={styles.listItem}>
               <Image source={{ uri: a.photo }} style={styles.listAvatar} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.listName}>{a.employeeName}</Text>
+                <Text style={styles.listName}>{a.employee_name}</Text>
                 <Text style={styles.listCode}>
-                  {a.employeeCode} · {a.type}
+                  {a.employee_code} · {a.type}
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
@@ -262,6 +319,8 @@ function getGreeting() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  loadingCenter: { alignItems: "center", justifyContent: "center" },
+  loadingText: { marginTop: 12, color: colors.textMuted, fontSize: 13 },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 24,

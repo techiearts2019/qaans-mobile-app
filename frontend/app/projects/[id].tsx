@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -13,12 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import {
-  Employee,
-  ProjectStatus,
-  employees,
-  projects as initialProjects,
-} from "@/src/data/mockData";
+import { api, Employee, Project, ProjectStatus } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const STATUS_META: Record<ProjectStatus, { bg: string; fg: string }> = {
@@ -30,39 +26,77 @@ const STATUS_META: Record<ProjectStatus, { bg: string; fg: string }> = {
 export default function ProjectDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const baseProject = initialProjects.find((p) => p.id === id);
-
-  const [allocatedIds, setAllocatedIds] = useState<string[]>(
-    baseProject?.allocatedEmployeeIds ?? []
-  );
+  const [baseProject, setBaseProject] = useState<Project | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    try {
+      const [p, emps] = await Promise.all([
+        api.getProject(id),
+        api.listEmployees(),
+      ]);
+      setBaseProject(p);
+      setEmployees(emps);
+    } catch (e) {
+      console.warn("project load failed", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  const allocatedIds = useMemo(
+    () => baseProject?.allocated_employee_ids ?? [],
+    [baseProject]
+  );
 
   const allocated = useMemo(
     () => employees.filter((e) => allocatedIds.includes(e.id)),
-    [allocatedIds]
+    [allocatedIds, employees]
   );
   const available = useMemo(
     () => employees.filter((e) => !allocatedIds.includes(e.id)),
-    [allocatedIds]
+    [allocatedIds, employees]
   );
 
-  if (!baseProject) {
+  if (loading || !baseProject) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.title}>Project not found</Text>
+      <SafeAreaView style={[styles.container, { alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator color={colors.brand} />
+        <Text style={{ marginTop: 12, color: colors.textMuted, fontSize: 13 }}>
+          Loading project…
+        </Text>
       </SafeAreaView>
     );
   }
 
   const meta = STATUS_META[baseProject.status];
 
-  const allocate = (empId: string) => {
-    setAllocatedIds((prev) => [...prev, empId]);
+  const allocate = async (empId: string) => {
+    try {
+      const updated = await api.allocate(baseProject.id, empId);
+      setBaseProject(updated);
+    } catch (e) {
+      console.warn("allocate failed", e);
+    }
     setPickerOpen(false);
   };
 
-  const unallocate = (empId: string) => {
-    setAllocatedIds((prev) => prev.filter((id) => id !== empId));
+  const unallocate = async (empId: string) => {
+    try {
+      const updated = await api.unallocate(baseProject.id, empId);
+      setBaseProject(updated);
+    } catch (e) {
+      console.warn("unallocate failed", e);
+    }
   };
 
   return (
@@ -81,7 +115,7 @@ export default function ProjectDetail() {
             {baseProject.name}
           </Text>
           <Text style={styles.subtitle}>
-            {baseProject.location} · {allocated.length}{" "}
+            {(baseProject.location ?? "—")} · {allocated.length}{" "}
             {allocated.length === 1 ? "employee" : "employees"}
           </Text>
         </View>
@@ -111,7 +145,7 @@ export default function ProjectDetail() {
                   size={12}
                   color={colors.textMuted}
                 />
-                <Text style={styles.infoMetaText}>{baseProject.location}</Text>
+                <Text style={styles.infoMetaText}>{baseProject.location ?? "—"}</Text>
               </View>
               <View style={styles.infoMetaRow}>
                 <Ionicons
@@ -120,7 +154,7 @@ export default function ProjectDetail() {
                   color={colors.textMuted}
                 />
                 <Text style={styles.infoMetaText}>
-                  Started {baseProject.startDate}
+                  Started {baseProject.start_date ?? "—"}
                 </Text>
               </View>
             </View>
@@ -184,11 +218,11 @@ export default function ProjectDetail() {
         ) : (
           allocated.map((e) => (
             <View key={e.id} style={styles.empRow}>
-              <Image source={{ uri: e.photo }} style={styles.empAvatar} />
+              <Image source={{ uri: e.photo ?? undefined }} style={styles.empAvatar} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.empName}>{e.name}</Text>
                 <Text style={styles.empCode}>
-                  {e.code} · {e.designation}
+                  {e.code} · {e.designation ?? "—"}
                 </Text>
               </View>
               <Pressable
@@ -250,11 +284,11 @@ export default function ProjectDetail() {
                   onPress={() => allocate(e.id)}
                   style={styles.empRow}
                 >
-                  <Image source={{ uri: e.photo }} style={styles.empAvatar} />
+                  <Image source={{ uri: e.photo ?? undefined }} style={styles.empAvatar} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.empName}>{e.name}</Text>
                     <Text style={styles.empCode}>
-                      {e.code} · {e.designation}
+                      {e.code} · {e.designation ?? "—"}
                     </Text>
                   </View>
                   <View style={styles.addPill}>

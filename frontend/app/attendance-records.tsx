@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { employees, todayAttendance } from "@/src/data/mockData";
+import { api, AttendanceEntry, Employee } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const DAYS = ["Today", "Yesterday", "This Week", "This Month"];
@@ -27,6 +28,32 @@ export default function AttendanceRecords() {
   const router = useRouter();
   const [activeDay, setActiveDay] = useState("Today");
   const [query, setQuery] = useState("");
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceEntry[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [att, emps] = await Promise.all([
+        api.todayAttendance(),
+        api.listEmployees(),
+      ]);
+      setTodayAttendance(att);
+      setEmployees(emps);
+    } catch (e) {
+      console.warn("records load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const present = todayAttendance.length;
   const absent = employees.length - present;
@@ -38,22 +65,22 @@ export default function AttendanceRecords() {
       todayAttendance.filter(
         (a) =>
           !q ||
-          a.employeeName.toLowerCase().includes(q) ||
-          a.employeeCode.toLowerCase().includes(q)
+          a.employee_name.toLowerCase().includes(q) ||
+          a.employee_code.toLowerCase().includes(q)
       ),
-    [q]
+    [q, todayAttendance]
   );
   const filteredAbsent = useMemo(
     () =>
       employees.filter(
         (e) =>
-          !todayAttendance.find((a) => a.employeeId === e.id) &&
+          !todayAttendance.find((a) => a.employee_id === e.id) &&
           e.status === "Active" &&
           (!q ||
             e.name.toLowerCase().includes(q) ||
             e.code.toLowerCase().includes(q))
       ),
-    [q]
+    [q, employees, todayAttendance]
   );
   const noResults =
     q && filteredAttendance.length === 0 && filteredAbsent.length === 0;
@@ -117,6 +144,16 @@ export default function AttendanceRecords() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={colors.brand}
+          />
+        }
       >
         <View style={styles.statsRow}>
           <StatCard
@@ -174,10 +211,10 @@ export default function AttendanceRecords() {
               STATUS_COLOR["On Time"];
             return (
               <View key={a.id} style={styles.row}>
-                <Image source={{ uri: a.photo }} style={styles.avatar} />
+                <Image source={{ uri: a.photo ?? undefined }} style={styles.avatar} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{a.employeeName}</Text>
-                  <Text style={styles.code}>{a.employeeCode}</Text>
+                  <Text style={styles.name}>{a.employee_name}</Text>
+                  <Text style={styles.code}>{a.employee_code}</Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <View style={styles.timeRow}>
@@ -205,7 +242,7 @@ export default function AttendanceRecords() {
           })}
           {filteredAbsent.map((e) => (
             <View key={e.id} style={styles.row}>
-              <Image source={{ uri: e.photo }} style={styles.avatar} />
+              <Image source={{ uri: e.photo ?? undefined }} style={styles.avatar} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{e.name}</Text>
                 <Text style={styles.code}>{e.code}</Text>

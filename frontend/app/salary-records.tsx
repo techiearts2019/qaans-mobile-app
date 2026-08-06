@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,27 +13,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { employees } from "@/src/data/mockData";
+import { api, SalaryRow } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const MONTHS = ["Oct 25", "Nov 25", "Dec 25", "Jan 26", "Feb 26"];
-
-type SalaryRow = {
-  empId: string;
-  daysWorked: number;
-  daily: number;
-  bonus: number;
-  deductions: number;
-  status: "Paid" | "Pending" | "Processing";
-};
-
-const ROWS: SalaryRow[] = [
-  { empId: "e1", daysWorked: 26, daily: 750, bonus: 1000, deductions: 200, status: "Paid" },
-  { empId: "e2", daysWorked: 24, daily: 550, bonus: 0, deductions: 100, status: "Paid" },
-  { empId: "e3", daysWorked: 22, daily: 700, bonus: 500, deductions: 0, status: "Pending" },
-  { empId: "e4", daysWorked: 18, daily: 800, bonus: 0, deductions: 300, status: "Processing" },
-  { empId: "e5", daysWorked: 26, daily: 600, bonus: 800, deductions: 150, status: "Paid" },
-];
 
 const STATUS_META: Record<
   SalaryRow["status"],
@@ -46,12 +30,33 @@ const STATUS_META: Record<
 export default function SalaryRecords() {
   const router = useRouter();
   const [month, setMonth] = useState("Feb 26");
+  const [rows, setRows] = useState<SalaryRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const totalPayout = ROWS.reduce(
-    (s, r) => s + r.daysWorked * r.daily - r.deductions,
-    0
+  const load = useCallback(async (m: string) => {
+    setLoading(true);
+    try {
+      const data = await api.salary(m);
+      setRows(data);
+    } catch (e) {
+      console.warn("salary load failed", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load(month);
+    }, [load, month])
   );
-  const paid = ROWS.filter((r) => r.status === "Paid").length;
+
+  useEffect(() => {
+    load(month);
+  }, [month, load]);
+
+  const totalPayout = rows.reduce((s, r) => s + r.net, 0);
+  const paid = rows.filter((r) => r.status === "Paid").length;
 
   return (
     <View style={styles.container}>
@@ -98,7 +103,7 @@ export default function SalaryRecords() {
                 <View style={styles.summaryMetaItem}>
                   <View style={[styles.smallDot, { backgroundColor: "#FBBF24" }]} />
                   <Text style={styles.summaryMetaText}>
-                    {ROWS.length - paid} Pending
+                    {rows.length - paid} Pending
                   </Text>
                 </View>
               </View>
@@ -141,49 +146,60 @@ export default function SalaryRecords() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
       >
-        {ROWS.map((r) => {
-          const emp = employees.find((e) => e.id === r.empId);
-          if (!emp) return null;
-          const total = r.daysWorked * r.daily - r.deductions;
-          const meta = STATUS_META[r.status];
-          return (
-            <View key={r.empId} style={styles.card}>
-              <View style={styles.cardTop}>
-                <Image source={{ uri: emp.photo }} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.empName}>{emp.name}</Text>
-                  <Text style={styles.empCode}>
-                    {emp.code} · {emp.designation}
+        {loading ? (
+          <View style={{ paddingVertical: 60, alignItems: "center" }}>
+            <ActivityIndicator color={colors.brand} />
+            <Text style={{ marginTop: 12, color: colors.textMuted, fontSize: 13 }}>
+              Loading salary…
+            </Text>
+          </View>
+        ) : rows.length === 0 ? (
+          <View style={{ paddingVertical: 60, alignItems: "center" }}>
+            <Ionicons name="wallet-outline" size={36} color={colors.textMuted} />
+            <Text style={{ marginTop: 12, color: colors.textMuted, fontSize: 13 }}>
+              No salary records for {month}
+            </Text>
+          </View>
+        ) : (
+          rows.map((r) => {
+            const meta = STATUS_META[r.status];
+            return (
+              <View key={r.id} style={styles.card}>
+                <View style={styles.cardTop}>
+                  <Image source={{ uri: r.photo ?? undefined }} style={styles.avatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.empName}>{r.employee_name}</Text>
+                    <Text style={styles.empCode}>{r.employee_code}</Text>
+                  </View>
+                  <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
+                    <Text style={[styles.statusText, { color: meta.fg }]}>
+                      {r.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.metaRow}>
+                  <Meta label="Days" value={`${r.days_worked}`} />
+                  <View style={styles.metaSep} />
+                  <Meta label="Rate/Day" value={`₹${r.daily_rate}`} />
+                  <View style={styles.metaSep} />
+                  <Meta
+                    label="Deduct"
+                    value={`₹${r.deductions}`}
+                    color={r.deductions > 0 ? colors.danger : undefined}
+                  />
+                </View>
+
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Net payable</Text>
+                  <Text style={styles.totalValue}>
+                    ₹ {r.net.toLocaleString("en-IN")}
                   </Text>
                 </View>
-                <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
-                  <Text style={[styles.statusText, { color: meta.fg }]}>
-                    {r.status}
-                  </Text>
-                </View>
               </View>
-
-              <View style={styles.metaRow}>
-                <Meta label="Days" value={`${r.daysWorked}`} />
-                <View style={styles.metaSep} />
-                <Meta label="Rate/Day" value={`₹${r.daily}`} />
-                <View style={styles.metaSep} />
-                <Meta
-                  label="Deduct"
-                  value={`₹${r.deductions}`}
-                  color={r.deductions > 0 ? colors.danger : undefined}
-                />
-              </View>
-
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Net payable</Text>
-                <Text style={styles.totalValue}>
-                  ₹ {total.toLocaleString("en-IN")}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );

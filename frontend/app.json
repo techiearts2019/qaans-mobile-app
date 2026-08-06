@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Recognise employee faces to mark attendance",
         "NSMicrophoneUsageDescription": "Voice announce attendance in Hindi"
-      }
+      },
+      "bundleIdentifier": "com.emergent.dihadimobileapp.obay4u"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +22,11 @@
         "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "RECORD_AUDIO"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "package": "com.emergent.dihadimobileapp.obay4u"
     },
     "web": {
       "bundler": "metro",

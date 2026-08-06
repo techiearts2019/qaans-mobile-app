@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { notifications as initial } from "@/src/data/mockData";
+import { api, AppNotification } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const TYPE_META: Record<
@@ -23,12 +26,48 @@ const TYPE_META: Record<
 };
 
 export default function Notifications() {
-  const [items, setItems] = useState(initial);
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.notifications();
+      setItems(data);
+    } catch (e) {
+      console.warn("notifications load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const unread = items.filter((n) => !n.read).length;
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setItems((s) => s.map((n) => ({ ...n, read: true })));
+    try {
+      await api.markAllRead();
+    } catch (e) {
+      console.warn("mark all read failed", e);
+    }
+  };
+
+  const markOne = async (id: string) => {
+    setItems((s) =>
+      s.map((x) => (x.id === id ? { ...x, read: true } : x))
+    );
+    try {
+      await api.markNotificationRead(id);
+    } catch (e) {
+      console.warn("mark read failed", e);
+    }
   };
 
   return (
@@ -57,6 +96,16 @@ export default function Notifications() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={colors.brand}
+          />
+        }
       >
         {items.map((n) => {
           const meta = TYPE_META[n.type];
@@ -64,11 +113,7 @@ export default function Notifications() {
             <Pressable
               key={n.id}
               testID={`notification-${n.id}`}
-              onPress={() =>
-                setItems((s) =>
-                  s.map((x) => (x.id === n.id ? { ...x, read: true } : x))
-                )
-              }
+              onPress={() => markOne(n.id)}
               style={[styles.card, !n.read && styles.cardUnread]}
             >
               <View style={[styles.iconBox, { backgroundColor: meta.bg }]}>
@@ -84,7 +129,7 @@ export default function Notifications() {
                 <Text style={styles.cardDesc} numberOfLines={2}>
                   {n.description}
                 </Text>
-                <Text style={styles.cardTime}>{n.time}</Text>
+                <Text style={styles.cardTime}>{n.time_label}</Text>
               </View>
             </Pressable>
           );
@@ -92,12 +137,18 @@ export default function Notifications() {
 
         {items.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons
-              name="notifications-off-outline"
-              size={36}
-              color={colors.textMuted}
-            />
-            <Text style={styles.emptyText}>No notifications yet</Text>
+            {loading ? (
+              <ActivityIndicator color={colors.brand} />
+            ) : (
+              <Ionicons
+                name="notifications-off-outline"
+                size={36}
+                color={colors.textMuted}
+              />
+            )}
+            <Text style={styles.emptyText}>
+              {loading ? "Loading notifications…" : "No notifications yet"}
+            </Text>
           </View>
         ) : null}
       </ScrollView>

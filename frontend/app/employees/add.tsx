@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -21,9 +21,9 @@ import {
   designations,
   genders,
   maritalStatuses,
-  projects,
   skills,
 } from "@/src/data/mockData";
+import { api, Project } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 type FormState = {
@@ -70,14 +70,21 @@ const init: FormState = {
 export default function AddEmployee() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(init);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<0 | 1 | 2>(0);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView | null>(null);
-  const [toast, setToast] = useState<{ visible: boolean; message: string }>({
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: "success" | "error" }>({
     visible: false,
     message: "",
+    type: "success",
   });
+
+  useEffect(() => {
+    api.listProjects().then(setProjects).catch(() => {});
+  }, []);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((s) => ({ ...s, [k]: v }));
@@ -131,19 +138,59 @@ export default function AddEmployee() {
     setCameraOpen(false);
   };
 
-  const onSave = () => {
+  const onSave = async () => {
     if (!allValid) {
       setToast({
         visible: true,
         message: "Please fill all required fields",
+        type: "error",
       });
       return;
     }
-    setToast({
-      visible: true,
-      message: `${form.name} added successfully`,
-    });
-    setTimeout(() => router.replace("/employees"), 900);
+    const projMatch = projects.find((p) => p.name === form.project);
+    setSaving(true);
+    try {
+      await api.createEmployee({
+        name: form.name,
+        code: form.empCode,
+        designation: form.designation,
+        skill: form.skill,
+        gender: form.gender,
+        marital_status: form.marital,
+        dob: form.dob,
+        father_name: form.fatherName,
+        nominee: form.nominee || undefined,
+        primary_mobile: form.primaryMobile,
+        alt_mobile: form.altMobile || undefined,
+        email: form.email || undefined,
+        date_of_joining: form.doj,
+        date_of_exit: form.doe,
+        current_address: form.currentAddr,
+        permanent_address: form.permanentAddr,
+        aadhaar: form.aadhaar,
+        pan: form.pan || undefined,
+        uan: form.uan || undefined,
+        esi: form.esi || undefined,
+        status: projMatch ? "Active" : "No Allocation",
+        photo: form.photo,
+        project_id: projMatch?.id,
+      });
+      setToast({
+        visible: true,
+        message: `${form.name} added successfully`,
+        type: "success",
+      });
+      setTimeout(() => router.replace("/employees"), 900);
+    } catch (e) {
+      console.warn("create employee failed", e);
+      setToast({
+        visible: true,
+        message: "Failed to save employee. Try again.",
+        type: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -490,6 +537,7 @@ export default function AddEmployee() {
             testID="save-employee-button"
             label="Add Employee"
             onPress={onSave}
+            loading={saving}
             iconRight="checkmark"
             style={{ flex: 1 }}
           />
@@ -540,8 +588,8 @@ export default function AddEmployee() {
       <Toast
         visible={toast.visible}
         message={toast.message}
-        type={allValid ? "success" : "error"}
-        onHide={() => setToast({ visible: false, message: "" })}
+        type={toast.type}
+        onHide={() => setToast({ visible: false, message: "", type: "success" })}
       />
     </SafeAreaView>
   );

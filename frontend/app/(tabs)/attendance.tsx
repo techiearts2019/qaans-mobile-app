@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import { employees } from "@/src/data/mockData";
+import { api, Employee } from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 type Phase = "idle" | "scanning" | "matched";
@@ -31,6 +31,7 @@ export default function FaceAttendance() {
   const [matchedIndex, setMatchedIndex] = useState(0);
   const [action, setAction] = useState<"Check-in" | "Check-out">("Check-in");
   const [isFocused, setIsFocused] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // animations
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -42,9 +43,12 @@ export default function FaceAttendance() {
     useCallback(() => {
       setIsFocused(true);
       setPhase("scanning");
+      // Reload employees list on focus (in case new ones were added)
+      api
+        .listEmployees()
+        .then(setEmployees)
+        .catch((e) => console.warn("faces load failed", e));
       return () => {
-        // Screen lost focus — stop voice, close any match modal,
-        // and pause the scanning logic + camera.
         setIsFocused(false);
         setPhase("idle");
         try {
@@ -115,13 +119,25 @@ export default function FaceAttendance() {
   useEffect(() => {
     if (!isFocused) return;
     if (phase !== "scanning") return;
-    const t = setTimeout(() => {
+    if (employees.length === 0) return;
+    const t = setTimeout(async () => {
       const idx = Math.floor(Math.random() * employees.length);
+      const emp = employees[idx];
+      const type: "Check-in" | "Check-out" =
+        Math.random() > 0.5 ? "Check-in" : "Check-out";
       setMatchedIndex(idx);
-      setAction(Math.random() > 0.5 ? "Check-in" : "Check-out");
+      setAction(type);
       setPhase("matched");
+      // Persist the mark to the backend (fire-and-forget)
+      api
+        .markAttendance({
+          employee_id: emp.id,
+          type,
+          status: "On Time",
+        })
+        .catch((e) => console.warn("mark attendance failed", e));
       try {
-        Speech.speak(`${employees[idx].nameHi} की हाजिरी लग गई है`, {
+        Speech.speak(`${emp.name_hi ?? emp.name} की हाजिरी लग गई है`, {
           language: "hi-IN",
           rate: 0.95,
         });
@@ -130,7 +146,7 @@ export default function FaceAttendance() {
       }
     }, 4200);
     return () => clearTimeout(t);
-  }, [phase, isFocused]);
+  }, [phase, isFocused, employees]);
 
   const resumeScan = () => {
     Speech.stop();
@@ -184,6 +200,10 @@ export default function FaceAttendance() {
   }
 
   const matched = employees[matchedIndex];
+
+  if (phase === "matched" && !matched) {
+    setPhase("scanning");
+  }
 
   return (
     <View style={styles.container}>
@@ -324,7 +344,7 @@ export default function FaceAttendance() {
       </View>
 
       {/* Match modal */}
-      <Modal visible={phase === "matched"} transparent animationType="fade">
+      <Modal visible={phase === "matched" && !!matched} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.matchCard}>
             <View style={styles.matchTopRow}>
@@ -347,7 +367,7 @@ export default function FaceAttendance() {
 
             <View style={styles.matchAvatarWrap}>
               <Image
-                source={{ uri: matched.photo }}
+                source={{ uri: matched?.photo ?? undefined }}
                 style={styles.matchAvatar}
               />
               <View style={styles.matchTick}>
@@ -355,8 +375,8 @@ export default function FaceAttendance() {
               </View>
             </View>
 
-            <Text style={styles.matchName}>{matched.name}</Text>
-            <Text style={styles.matchNameHi}>{matched.nameHi}</Text>
+            <Text style={styles.matchName}>{matched?.name}</Text>
+            <Text style={styles.matchNameHi}>{matched?.name_hi}</Text>
 
             <View style={styles.matchMeta}>
               <View style={styles.metaItem}>
@@ -365,7 +385,7 @@ export default function FaceAttendance() {
                   size={14}
                   color={colors.textSecondary}
                 />
-                <Text style={styles.metaText}>{matched.code}</Text>
+                <Text style={styles.metaText}>{matched?.code}</Text>
               </View>
               <View style={styles.metaSep} />
               <View style={styles.metaItem}>
@@ -374,7 +394,7 @@ export default function FaceAttendance() {
                   size={14}
                   color={colors.textSecondary}
                 />
-                <Text style={styles.metaText}>{matched.designation}</Text>
+                <Text style={styles.metaText}>{matched?.designation ?? "—"}</Text>
               </View>
             </View>
 

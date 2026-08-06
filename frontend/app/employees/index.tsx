@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,12 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import {
-  Employee,
-  EmployeeStatus,
-  employees as initial,
-  projectFor,
-} from "@/src/data/mockData";
+import { api, Employee, EmployeeStatus } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 const FILTERS: ("All" | EmployeeStatus)[] = [
@@ -38,9 +35,30 @@ export default function EmployeesList() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [items, setItems] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.listEmployees();
+      setItems(data);
+    } catch (e) {
+      console.warn("employees load failed", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const list = useMemo(() => {
-    return initial.filter((e) => {
+    return items.filter((e) => {
       const matchesFilter = filter === "All" || e.status === filter;
       const q = query.trim().toLowerCase();
       const matchesQuery =
@@ -49,17 +67,17 @@ export default function EmployeesList() {
         e.code.toLowerCase().includes(q);
       return matchesFilter && matchesQuery;
     });
-  }, [query, filter]);
+  }, [query, filter, items]);
 
   const counts = useMemo(() => {
     return {
-      All: initial.length,
-      Active: initial.filter((e) => e.status === "Active").length,
-      Inactive: initial.filter((e) => e.status === "Inactive").length,
-      "No Allocation": initial.filter((e) => e.status === "No Allocation")
+      All: items.length,
+      Active: items.filter((e) => e.status === "Active").length,
+      Inactive: items.filter((e) => e.status === "Inactive").length,
+      "No Allocation": items.filter((e) => e.status === "No Allocation")
         .length,
     } as Record<string, number>;
-  }, []);
+  }, [items]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -75,7 +93,7 @@ export default function EmployeesList() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Employees</Text>
           <Text style={styles.subtitle}>
-            {initial.length} total · {counts.Active} active
+            {items.length} total · {counts.Active} active
           </Text>
         </View>
         <Pressable
@@ -155,15 +173,32 @@ export default function EmployeesList() {
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         renderItem={({ item }) => <EmpCard emp={item} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={colors.brand}
+          />
+        }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons
-              name="people-outline"
-              size={36}
-              color={colors.textMuted}
-            />
-            <Text style={styles.emptyText}>No employees found</Text>
-          </View>
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator color={colors.brand} />
+              <Text style={styles.emptyText}>Loading employees…</Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Ionicons
+                name="people-outline"
+                size={36}
+                color={colors.textMuted}
+              />
+              <Text style={styles.emptyText}>No employees found</Text>
+            </View>
+          )
         }
       />
     </SafeAreaView>
@@ -172,13 +207,13 @@ export default function EmployeesList() {
 
 function EmpCard({ emp }: { emp: Employee }) {
   const c = STATUS_COLOR[emp.status];
-  const proj = projectFor(emp.id);
+  const projName = emp.project_name;
   return (
     <Pressable
       style={styles.card}
       testID={`employee-card-${emp.id}`}
     >
-      <Image source={{ uri: emp.photo }} style={styles.avatar} />
+      <Image source={{ uri: emp.photo ?? undefined }} style={styles.avatar} />
       <View style={{ flex: 1 }}>
         <Text style={styles.name}>{emp.name}</Text>
         <View style={styles.metaRow}>
@@ -189,13 +224,13 @@ function EmpCard({ emp }: { emp: Employee }) {
           />
           <Text style={styles.metaText}>{emp.code}</Text>
           <View style={styles.dotSep} />
-          <Text style={styles.metaText}>{emp.designation}</Text>
+          <Text style={styles.metaText}>{emp.designation ?? "—"}</Text>
         </View>
-        {proj ? (
+        {projName ? (
           <View style={styles.projChip}>
             <Ionicons name="briefcase" size={10} color={colors.brand} />
             <Text style={styles.projChipText} numberOfLines={1}>
-              {proj.name}
+              {projName}
             </Text>
           </View>
         ) : null}
