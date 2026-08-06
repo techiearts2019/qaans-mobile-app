@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import { api, Employee, Supervisor } from "@/src/lib/api";
+import { api, clearToken, Employee, Supervisor } from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 const MENU: {
@@ -214,7 +214,10 @@ export default function Profile() {
         <Pressable
           testID="logout-button"
           style={styles.logoutBtn}
-          onPress={() => router.replace("/welcome")}
+          onPress={async () => {
+            await clearToken();
+            router.replace("/login");
+          }}
         >
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           <Text style={styles.logoutText}>Log Out</Text>

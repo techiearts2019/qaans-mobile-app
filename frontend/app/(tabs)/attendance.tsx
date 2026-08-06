@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import { api, Employee } from "@/src/lib/api";
+import { api, Employee, FaceMatchResult } from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 type Phase = "idle" | "scanning" | "matched";
@@ -28,10 +28,13 @@ export default function FaceAttendance() {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<"front" | "back">("front");
   const [phase, setPhase] = useState<Phase>("scanning");
-  const [matchedIndex, setMatchedIndex] = useState(0);
   const [action, setAction] = useState<"Check-in" | "Check-out">("Check-in");
   const [isFocused, setIsFocused] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [matched, setMatched] = useState<FaceMatchResult["employee"] | null>(null);
+  const [matchTime, setMatchTime] = useState<string>("");
+  const cameraRef = useRef<CameraView | null>(null);
+  const busyRef = useRef(false);
 
   // animations
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -115,41 +118,65 @@ export default function FaceAttendance() {
     ).start();
   }, [phase, scanLine, ringPulse, cornerOpacity]);
 
-  // simulated face match every 4-5s
+  // Real face match — capture a frame every ~2.5s and POST to /api/attendance/match
   useEffect(() => {
     if (!isFocused) return;
     if (phase !== "scanning") return;
-    if (employees.length === 0) return;
-    const t = setTimeout(async () => {
-      const idx = Math.floor(Math.random() * employees.length);
-      const emp = employees[idx];
-      const type: "Check-in" | "Check-out" =
-        Math.random() > 0.5 ? "Check-in" : "Check-out";
-      setMatchedIndex(idx);
-      setAction(type);
-      setPhase("matched");
-      // Persist the mark to the backend (fire-and-forget)
-      api
-        .markAttendance({
-          employee_id: emp.id,
-          type,
-          status: "On Time",
-        })
-        .catch((e) => console.warn("mark attendance failed", e));
+
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled || busyRef.current) return;
+      const cam = cameraRef.current;
+      if (!cam) return;
+      busyRef.current = true;
       try {
-        Speech.speak(`${emp.name_hi ?? emp.name} की हाजिरी लग गई है`, {
-          language: "hi-IN",
-          rate: 0.95,
+        const pic = await cam.takePictureAsync({
+          quality: 0.35,
+          base64: true,
+          skipProcessing: true,
+          shutterSound: false,
         });
-      } catch {
-        // speech may not be supported on some platforms; ignore
+        if (cancelled || !pic?.base64) return;
+        const res = await api.matchFace({
+          image_b64: pic.base64,
+          type: action,
+        });
+        if (cancelled) return;
+        if (res.matched && res.employee) {
+          setMatched(res.employee);
+          setMatchTime(res.attendance?.time ?? "");
+          setPhase("matched");
+          try {
+            Speech.speak(
+              `${res.employee.name_hi ?? res.employee.name} की हाजिरी लग गई है`,
+              { language: "hi-IN", rate: 0.95 }
+            );
+          } catch {
+            // noop
+          }
+        }
+      } catch (e) {
+        // ignore transient errors and keep scanning
+        console.warn("match tick failed", e);
+      } finally {
+        busyRef.current = false;
       }
-    }, 4200);
-    return () => clearTimeout(t);
-  }, [phase, isFocused, employees]);
+    };
+
+    const t = setInterval(tick, 2500);
+    // fire once immediately
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [phase, isFocused, action]);
 
   const resumeScan = () => {
     Speech.stop();
+    setMatched(null);
+    setMatchTime("");
     setPhase("scanning");
   };
 
@@ -199,17 +226,12 @@ export default function FaceAttendance() {
     );
   }
 
-  const matched = employees[matchedIndex];
-
-  if (phase === "matched" && !matched) {
-    setPhase("scanning");
-  }
-
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       {isFocused ? (
         <CameraView
+          ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing={facing}
           testID="face-camera-view"
@@ -414,10 +436,11 @@ export default function FaceAttendance() {
               <View style={styles.timePill}>
                 <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                 <Text style={styles.timePillText}>
-                  {new Date().toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {matchTime ||
+                    new Date().toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                 </Text>
               </View>
             </View>

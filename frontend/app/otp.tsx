@@ -2,20 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
+import { Toast } from "@/src/components/Toast";
+import { api, setToken } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
-const LEN = 4;
+const LEN = 6;
 
 export default function Otp() {
   const router = useRouter();
@@ -23,6 +19,11 @@ export default function Otp() {
   const [digits, setDigits] = useState<string[]>(Array(LEN).fill(""));
   const [resendIn, setResendIn] = useState(30);
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: "success" | "error";
+  }>({ visible: false, message: "", type: "success" });
   const inputs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
@@ -48,13 +49,45 @@ export default function Otp() {
   const code = digits.join("");
   const isComplete = code.length === LEN;
 
-  const verify = () => {
-    if (!isComplete) return;
+  const verify = async () => {
+    if (!isComplete || !email) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await api.verifyOtp(email, code);
+      await setToken(res.access_token);
       router.replace("/(tabs)/dashboard");
-    }, 700);
+    } catch {
+      setToast({
+        visible: true,
+        message: "Invalid or expired OTP. Please try again.",
+        type: "error",
+      });
+      setDigits(Array(LEN).fill(""));
+      inputs.current[0]?.focus();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resend = async () => {
+    if (!email) return;
+    try {
+      await api.requestOtp(email);
+      setToast({
+        visible: true,
+        message: "New OTP sent",
+        type: "success",
+      });
+      setDigits(Array(LEN).fill(""));
+      setResendIn(30);
+      inputs.current[0]?.focus();
+    } catch {
+      setToast({
+        visible: true,
+        message: "Could not resend OTP. Try again shortly.",
+        type: "error",
+      });
+    }
   };
 
   return (
@@ -119,33 +152,21 @@ export default function Otp() {
           {resendIn > 0 ? (
             <Text style={styles.timer}>Resend in {resendIn}s</Text>
           ) : (
-            <Pressable
-              testID="otp-resend-button"
-              onPress={() => {
-                setDigits(Array(LEN).fill(""));
-                setResendIn(30);
-                inputs.current[0]?.focus();
-              }}
-            >
+            <Pressable testID="otp-resend-button" onPress={resend}>
               <Text style={styles.resendLink}>Resend OTP</Text>
             </Pressable>
           )}
         </View>
-
-        <View style={styles.hint}>
-          <Ionicons
-            name="information-circle-outline"
-            size={16}
-            color={colors.brand}
-          />
-          <Text style={styles.hintText}>
-            For demo, use code{" "}
-            <Text style={{ fontWeight: "800", color: colors.brand }}>
-              1234
-            </Text>
-          </Text>
-        </View>
       </KeyboardAwareScrollView>
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() =>
+          setToast({ visible: false, message: "", type: "success" })
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -185,20 +206,16 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 28,
   },
-  otpRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 28,
-  },
+  otpRow: { flexDirection: "row", gap: 8, marginBottom: 28 },
   otpBox: {
     flex: 1,
-    height: 64,
+    height: 60,
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surfaceAlt,
     textAlign: "center",
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
     color: colors.textPrimary,
   },
@@ -216,15 +233,4 @@ const styles = StyleSheet.create({
   resendText: { color: colors.textSecondary, fontSize: 14 },
   timer: { color: colors.textMuted, fontSize: 14, fontWeight: "600" },
   resendLink: { color: colors.brand, fontSize: 14, fontWeight: "700" },
-  hint: {
-    marginTop: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: colors.brandSoft,
-    paddingVertical: 10,
-    borderRadius: radius.md,
-  },
-  hintText: { color: colors.textSecondary, fontSize: 13 },
 });

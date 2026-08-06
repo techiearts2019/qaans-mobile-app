@@ -14,22 +14,53 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DihadiLogo } from "@/src/components/DihadiLogo";
 import { PrimaryButton } from "@/src/components/PrimaryButton";
+import { Toast } from "@/src/components/Toast";
+import { api } from "@/src/lib/api";
 import { colors, radius } from "@/src/theme/colors";
 
 export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: "success" | "error";
+  }>({ visible: false, message: "", type: "success" });
 
   const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const sendOtp = () => {
+  const sendOtp = async () => {
     if (!isValid) return;
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await api.requestOtp(email.trim().toLowerCase());
+      setToast({
+        visible: true,
+        message: "If eligible, an OTP was sent to your email",
+        type: "success",
+      });
+      setTimeout(
+        () =>
+          router.push({
+            pathname: "/otp",
+            params: { email: email.trim().toLowerCase() },
+          }),
+        450
+      );
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      console.warn("[login] request OTP failed:", msg, e);
+      setToast({
+        visible: true,
+        message: msg.includes("429")
+          ? "Too many requests. Please try again in a few minutes."
+          : "Could not send OTP. Please try again.",
+        type: "error",
+      });
+    } finally {
       setLoading(false);
-      router.push({ pathname: "/otp", params: { email } });
-    }, 700);
+    }
   };
 
   return (
@@ -50,13 +81,12 @@ export default function Login() {
         </Pressable>
 
         <View style={styles.logoWrap}>
-          <DihadiLogo size={56} variant="brand" />
+          <DihadiLogo size={56} />
         </View>
 
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>
-          Enter your email to receive a one-time verification code for your
-          supervisor account.
+          Enter your supervisor email to receive a one-time verification code.
         </Text>
 
         <View style={styles.field}>
@@ -90,26 +120,9 @@ export default function Login() {
           iconRight="arrow-forward"
         />
 
-        <View style={styles.divider}>
-          <View style={styles.line} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.line} />
-        </View>
-
-        <Pressable
-          style={styles.demoBtn}
-          testID="login-demo-button"
-          onPress={() => router.replace("/(tabs)/dashboard")}
-        >
-          <Ionicons name="rocket-outline" size={18} color={colors.brand} />
-          <Text style={styles.demoText}>Continue as Demo Supervisor</Text>
-        </Pressable>
-
         <Text style={styles.terms}>
           By continuing you agree to our{" "}
-          <Text style={{ color: colors.brand, fontWeight: "600" }}>
-            Terms
-          </Text>{" "}
+          <Text style={{ color: colors.brand, fontWeight: "600" }}>Terms</Text>{" "}
           &{" "}
           <Text style={{ color: colors.brand, fontWeight: "600" }}>
             Privacy Policy
@@ -117,17 +130,22 @@ export default function Login() {
           .
         </Text>
       </KeyboardAwareScrollView>
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() =>
+          setToast({ visible: false, message: "", type: "success" })
+        }
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
-  scroll: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    flexGrow: 1,
-  },
+  scroll: { paddingHorizontal: 24, paddingBottom: 24, flexGrow: 1 },
   backBtn: {
     width: 40,
     height: 40,
@@ -169,35 +187,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 10,
   },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 22,
-    gap: 12,
-  },
-  line: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
-  demoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    height: 52,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-  },
-  demoText: {
-    color: colors.brand,
-    fontWeight: "700",
-    fontSize: 15,
-  },
+  input: { flex: 1, fontSize: 16, color: colors.textPrimary },
   terms: {
     textAlign: "center",
     fontSize: 12,

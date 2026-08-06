@@ -1,6 +1,30 @@
 // Dihadi API client — hits the FastAPI backend at EXPO_PUBLIC_BACKEND_URL/api/*
 // Never call MySQL directly from the mobile app.
 
+import { router } from "expo-router";
+
+import { storage } from "@/src/utils/storage";
+
+export const AUTH_TOKEN_KEY = "dihadi_access_token";
+
+let cachedToken: string | null = null;
+
+export async function loadToken(): Promise<string | null> {
+  const raw = await storage.secureGet<string>(AUTH_TOKEN_KEY, "");
+  cachedToken = raw && raw.length > 0 ? raw : null;
+  return cachedToken;
+}
+
+export async function setToken(value: string) {
+  cachedToken = value;
+  await storage.secureSet(AUTH_TOKEN_KEY, value);
+}
+
+export async function clearToken() {
+  cachedToken = null;
+  await storage.secureRemove(AUTH_TOKEN_KEY);
+}
+
 export type EmployeeStatus = "Active" | "Inactive" | "No Allocation";
 export type ProjectStatus = "Active" | "Completed" | "On Hold";
 
@@ -67,6 +91,13 @@ export type AttendanceEntry = {
   status?: "On Time" | "Late" | "Early Out" | null;
 };
 
+export type FaceMatchResult = {
+  matched: boolean;
+  distance: number | null;
+  employee: Employee | null;
+  attendance: AttendanceEntry | null;
+};
+
 export type SalaryRow = {
   id: string;
   employee_id: string;
@@ -105,9 +136,9 @@ const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
 
 async function request<T>(
   path: string,
-  init?: RequestInit & { params?: Record<string, string | undefined> }
+  init?: RequestInit & { params?: Record<string, string | undefined>; skipAuth?: boolean }
 ): Promise<T> {
-  const { params, ...rest } = init ?? {};
+  const { params, skipAuth, ...rest } = init ?? {};
   let url = `${BASE}${path}`;
   if (params) {
     const qs = new URLSearchParams();
@@ -117,13 +148,22 @@ async function request<T>(
     const s = qs.toString();
     if (s) url += `?${s}`;
   }
-  const res = await fetch(url, {
-    ...rest,
-    headers: {
-      "Content-Type": "application/json",
-      ...(rest.headers || {}),
-    },
-  });
+  const headers = new Headers(rest.headers);
+  headers.set("Content-Type", "application/json");
+  if (!skipAuth) {
+    const token = cachedToken ?? (await loadToken());
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  const res = await fetch(url, { ...rest, headers });
+  if (res.status === 401 && !skipAuth) {
+    await clearToken();
+    try {
+      router.replace("/login");
+    } catch {
+      // router may not be ready — ignore
+    }
+    throw new Error("Session expired");
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
@@ -132,6 +172,22 @@ async function request<T>(
 }
 
 export const api = {
+  requestOtp: (email: string) =>
+    request<{ message: string }>("/auth/request-otp", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+      skipAuth: true,
+    }),
+  verifyOtp: (email: string, otp: string) =>
+    request<{ access_token: string; token_type: string; expires_in: number }>(
+      "/auth/verify-otp",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, otp }),
+        skipAuth: true,
+      }
+    ),
+
   supervisor: () => request<Supervisor>("/supervisor/me"),
 
   listEmployees: (opts?: { status?: string; q?: string }) =>
@@ -165,6 +221,16 @@ export const api = {
     status?: string;
   }) =>
     request<AttendanceEntry>("/attendance/mark", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  matchFace: (payload: {
+    image_b64: string;
+    type: "Check-in" | "Check-out";
+    threshold?: number;
+  }) =>
+    request<FaceMatchResult>("/attendance/match", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

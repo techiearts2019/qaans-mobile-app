@@ -1,34 +1,47 @@
 """
-Dihadi FastAPI backend — MySQL (via SQLAlchemy + PyMySQL)
-
-All endpoints are namespaced under /api.
-Auth is intentionally OFF for the demo phase.
+Dihadi FastAPI backend — MySQL (via SQLAlchemy + PyMySQL) + JWT/email-OTP auth
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import os
+import secrets
+from base64 import b64decode
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
+from urllib.request import Request, urlopen
 from uuid import uuid4
 
+import aiosmtplib
+import face_recognition
+import jwt
+import numpy as np
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import InvalidTokenError
+from PIL import Image as PILImage
+from pwdlib import PasswordHash
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import (
     Column,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     create_engine,
+    func,
     select,
+    update,
 )
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
@@ -59,12 +72,158 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
+# ---- auth config
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "5"))
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
+SMTP_HOST = os.environ["SMTP_HOST"]
+SMTP_PORT = int(os.environ["SMTP_PORT"])
+SMTP_USER = os.environ["SMTP_USER"]
+SMTP_PASSWORD = os.environ["SMTP_PASSWORD"]
+SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
+
+password_hash = PasswordHash.recommended()
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
 def new_id() -> str:
     return uuid4().hex
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    # naive UTC (matches SQLAlchemy DateTime default)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _load_image_from_url(url: str) -> Optional[np.ndarray]:
+    try:
+        req = Request(url, headers={"User-Agent": "dihadi/1.0"})
+        with urlopen(req, timeout=8) as r:
+            data = r.read()
+        img = PILImage.open(io.BytesIO(data)).convert("RGB")
+        return np.array(img)
+    except Exception as e:
+        logging.warning("photo fetch failed %s: %s", url, e)
+        return None
+
+
+def _encode_face(img: np.ndarray) -> Optional[np.ndarray]:
+    try:
+        locations = face_recognition.face_locations(img, model="hog")
+        if not locations:
+            return None
+        encs = face_recognition.face_encodings(img, known_face_locations=locations[:1])
+        return encs[0] if encs else None
+    except Exception as e:
+        logging.warning("face encoding failed: %s", e)
+        return None
+
+
+def _decode_b64_image(payload: str) -> Optional[np.ndarray]:
+    try:
+        if payload.startswith("data:"):
+            payload = payload.split(",", 1)[1]
+        img = PILImage.open(io.BytesIO(b64decode(payload))).convert("RGB")
+        return np.array(img)
+    except Exception as e:
+        logging.warning("b64 decode failed: %s", e)
+        return None
+
+
+import json  # noqa: E402
+
+
+def generate_otp() -> str:
+    return f"{secrets.randbelow(10 ** OTP_LENGTH):0{OTP_LENGTH}d}"
+
+
+def create_access_token(email: str, sup_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": email.lower(),
+        "supervisor_id": sup_id,
+        "iat": now,
+        "exp": now + timedelta(minutes=JWT_EXPIRE_MINUTES),
+        "type": "access",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict:
+    try:
+        return jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["sub", "exp", "iat", "type"]},
+        )
+    except InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def _load_image_from_url(url: str) -> Optional[np.ndarray]:
+    try:
+        req = Request(url, headers={"User-Agent": "dihadi/1.0"})
+        with urlopen(req, timeout=8) as r:
+            data = r.read()
+        img = PILImage.open(io.BytesIO(data)).convert("RGB")
+        return np.array(img)
+    except Exception as e:
+        logging.warning("photo fetch failed %s: %s", url, e)
+        return None
+
+
+def _encode_face(img: np.ndarray) -> Optional[np.ndarray]:
+    try:
+        locations = face_recognition.face_locations(img, model="hog")
+        if not locations:
+            return None
+        encs = face_recognition.face_encodings(img, known_face_locations=locations[:1])
+        return encs[0] if encs else None
+    except Exception as e:
+        logging.warning("face encoding failed: %s", e)
+        return None
+
+
+def _decode_b64_image(payload: str) -> Optional[np.ndarray]:
+    try:
+        if payload.startswith("data:"):
+            payload = payload.split(",", 1)[1]
+        img = PILImage.open(io.BytesIO(b64decode(payload))).convert("RGB")
+        return np.array(img)
+    except Exception as e:
+        logging.warning("b64 decode failed: %s", e)
+        return None
+
+
+import json  # for face_encoding serialization
+
+
+async def send_otp_email(to_email: str, otp: str) -> None:
+    message = EmailMessage()
+    message["From"] = SMTP_FROM
+    message["To"] = to_email
+    message["Subject"] = "Your Dihadi supervisor login code"
+    message.set_content(
+        f"Your Dihadi login code is {otp}.\n\n"
+        f"It expires in {OTP_TTL_MINUTES} minutes and can only be used once. "
+        "If you did not request it, ignore this email."
+    )
+    await aiosmtplib.send(
+        message,
+        hostname=SMTP_HOST,
+        port=SMTP_PORT,
+        username=SMTP_USER,
+        password=SMTP_PASSWORD,
+        start_tls=True,
+        timeout=20,
+    )
 
 
 # --------------------------------------------------------------- models -----
@@ -126,6 +285,7 @@ class Employee(Base):
     esi = Column(String(40))
     status = Column(String(30), default="Active")  # Active/Inactive/No Allocation
     photo = Column(Text)
+    face_encoding = Column(Text)  # JSON list[float] length 128, computed from photo
     created_at = Column(DateTime, default=now_utc)
 
     allocations = relationship(
@@ -176,6 +336,19 @@ class Notification(Base):
     read = Column(Integer, default=0)
     type = Column(String(30))  # attendance / employee / salary / system
     created_at = Column(DateTime, default=now_utc)
+
+
+class OtpCode(Base):
+    __tablename__ = "otp_codes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(320), nullable=False, index=True)
+    code_hash = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=now_utc)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    used_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_otp_email_created", "email", "created_at"),)
 
 
 # --------------------------------------------------------------- schemas ----
@@ -270,6 +443,19 @@ class AttendanceIn(BaseModel):
     type: str = Field(pattern="^(Check-in|Check-out)$")
     time: Optional[str] = None
     status: Optional[str] = "On Time"
+
+
+class FaceMatchIn(BaseModel):
+    image_b64: str
+    type: str = Field(default="Check-in", pattern="^(Check-in|Check-out)$")
+    threshold: float = Field(default=0.55, ge=0.30, le=0.80)
+
+
+class FaceMatchOut(BaseModel):
+    matched: bool
+    distance: Optional[float] = None
+    employee: Optional[EmployeeOut] = None
+    attendance: Optional[AttendanceOut] = None
 
 
 class SalaryOut(PydBase):
@@ -411,7 +597,147 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-api = APIRouter(prefix="/api")
+
+
+# -------------------------------------------------- auth dependency -------
+def require_supervisor(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Supervisor:
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    claims = decode_access_token(credentials.credentials)
+    with SessionLocal() as db:
+        sup = db.get(Supervisor, claims.get("supervisor_id", ""))
+        if not sup or sup.email.lower() != claims["sub"].lower():
+            raise HTTPException(401, "Supervisor no longer valid")
+        return sup
+
+
+# -------------------------------------------------- auth router (public) --
+auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class OtpRequestBody(BaseModel):
+    email: EmailStr
+
+
+class OtpVerifyBody(BaseModel):
+    email: EmailStr
+    otp: str = Field(pattern=r"^\d{4,6}$")
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+@auth_router.post("/request-otp", status_code=202)
+async def request_otp(body: OtpRequestBody):
+    email = str(body.email).strip().lower()
+    now = now_utc()
+    window_start = now - timedelta(minutes=15)
+
+    with SessionLocal() as db:
+        count = db.scalar(
+            select(func.count(OtpCode.id)).where(
+                OtpCode.email == email, OtpCode.created_at >= window_start
+            )
+        ) or 0
+        if count >= 5:
+            raise HTTPException(429, detail="Too many OTP requests; try again later")
+
+        sup = db.scalar(select(Supervisor).where(Supervisor.email == email))
+        # Same public response for known/unknown emails to prevent enumeration.
+        if sup is None:
+            return {"message": "If this address is eligible, an OTP has been sent."}
+
+        otp = generate_otp()
+
+        # Invalidate previous active codes for this email
+        db.execute(
+            update(OtpCode)
+            .where(
+                OtpCode.email == email,
+                OtpCode.used_at.is_(None),
+                OtpCode.expires_at > now,
+            )
+            .values(used_at=now)
+        )
+        row = OtpCode(
+            email=email,
+            code_hash=password_hash.hash(otp),
+            created_at=now,
+            expires_at=now + timedelta(minutes=OTP_TTL_MINUTES),
+            attempts=0,
+        )
+        db.add(row)
+        db.commit()
+
+    try:
+        await send_otp_email(email, otp)
+    except Exception as e:
+        logging.warning("OTP send failed: %s", e)
+        with SessionLocal() as db:
+            db.execute(
+                update(OtpCode)
+                .where(OtpCode.email == email, OtpCode.used_at.is_(None))
+                .values(used_at=now_utc())
+            )
+            db.commit()
+        raise HTTPException(503, detail="Unable to deliver OTP right now. Try again.")
+
+    return {"message": "If this address is eligible, an OTP has been sent."}
+
+
+@auth_router.post("/verify-otp", response_model=TokenResponse)
+def verify_otp(body: OtpVerifyBody):
+    email = str(body.email).strip().lower()
+    now = now_utc()
+    invalid = HTTPException(400, detail="Invalid or expired OTP")
+
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(OtpCode)
+            .where(
+                OtpCode.email == email,
+                OtpCode.used_at.is_(None),
+                OtpCode.expires_at > now,
+            )
+            .order_by(OtpCode.created_at.desc())
+        )
+        if row is None:
+            raise invalid
+        if row.attempts >= 5:
+            row.used_at = now
+            db.commit()
+            raise invalid
+        if not password_hash.verify(body.otp, row.code_hash):
+            row.attempts += 1
+            if row.attempts >= 5:
+                row.used_at = now
+            db.commit()
+            raise invalid
+
+        sup = db.scalar(select(Supervisor).where(Supervisor.email == email))
+        if sup is None:
+            row.used_at = now
+            db.commit()
+            raise invalid
+        row.used_at = now
+        db.commit()
+        token = create_access_token(sup.email, sup.id)
+        return TokenResponse(
+            access_token=token, expires_in=JWT_EXPIRE_MINUTES * 60
+        )
+
+
+# -------------------------------------------------- protected router ------
+api = APIRouter(prefix="/api", dependencies=[Depends(require_supervisor)])
 
 
 # ---------------------------------------------------- helper serializers ---
@@ -460,7 +786,13 @@ def get_supervisor():
 
 # ---- employees ----
 @api.get("/employees", response_model=list[EmployeeOut])
-def list_employees(status: Optional[str] = None, q: Optional[str] = None):
+def list_employees(
+    response: Response,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
     with SessionLocal() as db:
         query = db.query(Employee)
         if status and status != "All":
@@ -468,7 +800,16 @@ def list_employees(status: Optional[str] = None, q: Optional[str] = None):
         if q:
             like = f"%{q}%"
             query = query.filter((Employee.name.ilike(like)) | (Employee.code.ilike(like)))
-        emps = query.order_by(Employee.created_at.desc()).all()
+        total = query.count()
+        emps = (
+            query.order_by(Employee.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Page-Size"] = str(page_size)
         return [employee_to_out(e, db) for e in emps]
 
 
@@ -587,9 +928,23 @@ def unallocate_employee(project_id: str, employee_id: str):
 
 # ---- attendance ----
 @api.get("/attendance/today", response_model=list[AttendanceOut])
-def today_attendance():
+def today_attendance(
+    response: Response,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+):
     with SessionLocal() as db:
-        recs = db.query(AttendanceRecord).filter(AttendanceRecord.day == date.today()).all()
+        base = db.query(AttendanceRecord).filter(AttendanceRecord.day == date.today())
+        total = base.count()
+        recs = (
+            base.order_by(AttendanceRecord.marked_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Page-Size"] = str(page_size)
         out: list[AttendanceOut] = []
         for r in recs:
             emp = db.get(Employee, r.employee_id)
@@ -624,6 +979,71 @@ def mark_attendance(payload: AttendanceIn):
             id=rec.id, employee_id=emp.id, employee_name=emp.name,
             employee_code=emp.code, photo=emp.photo,
             type=rec.type, time=rec.time, status=rec.status,
+        )
+
+
+@api.post("/attendance/match", response_model=FaceMatchOut)
+def match_face(payload: FaceMatchIn):
+    """Server-side face match. Client sends a base64 JPEG/PNG captured from the
+    camera; we compute a 128-d encoding and compare with every enrolled employee.
+    Encodings for enrolled employees are computed lazily from `photo` and cached
+    in `face_encoding` column."""
+    frame = _decode_b64_image(payload.image_b64)
+    if frame is None:
+        raise HTTPException(400, "Could not decode image")
+    probe = _encode_face(frame)
+    if probe is None:
+        return FaceMatchOut(matched=False, distance=None)
+
+    with SessionLocal() as db:
+        emps = db.query(Employee).filter(Employee.status != "Inactive").all()
+        best_emp: Optional[Employee] = None
+        best_dist: Optional[float] = None
+        for emp in emps:
+            enc_arr: Optional[np.ndarray] = None
+            if emp.face_encoding:
+                try:
+                    enc_arr = np.array(json.loads(emp.face_encoding), dtype=np.float64)
+                except Exception:
+                    enc_arr = None
+            if enc_arr is None and emp.photo:
+                img = _load_image_from_url(emp.photo)
+                if img is not None:
+                    enc = _encode_face(img)
+                    if enc is not None:
+                        enc_arr = enc
+                        emp.face_encoding = json.dumps(enc.tolist())
+                        db.commit()
+            if enc_arr is None:
+                continue
+            dist = float(np.linalg.norm(enc_arr - probe))
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best_emp = emp
+
+        if best_emp is None or best_dist is None or best_dist > payload.threshold:
+            return FaceMatchOut(matched=False, distance=best_dist)
+
+        rec = AttendanceRecord(
+            employee_id=best_emp.id,
+            type=payload.type,
+            time=datetime.now().strftime("%I:%M %p"),
+            status="On Time",
+        )
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        return FaceMatchOut(
+            matched=True,
+            distance=best_dist,
+            employee=employee_to_out(best_emp, db),
+            attendance=AttendanceOut(
+                id=rec.id, employee_id=best_emp.id,
+                employee_name=best_emp.name, employee_code=best_emp.code,
+                photo=best_emp.photo, type=rec.type,
+                time=rec.time, status=rec.status,
+            ),
         )
 
 
@@ -686,7 +1106,8 @@ def mark_all_read():
 
 
 # --------------------------------------------------------- app wiring ------
-app.include_router(api)
+app.include_router(auth_router)  # public (no auth)
+app.include_router(api)          # everything else requires JWT
 
 app.add_middleware(
     CORSMiddleware,
