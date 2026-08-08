@@ -223,7 +223,7 @@ export default function Profile() {
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>
 
-        <Text style={styles.version}>Dihadi · v1.0.0</Text>
+        <Text style={styles.version}>Qaans ERP · v1.0.0</Text>
       </ScrollView>
     </View>
   );

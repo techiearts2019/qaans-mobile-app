@@ -193,7 +193,7 @@ export default function FaceAttendance() {
         </View>
         <Text style={styles.permTitle}>Camera access needed</Text>
         <Text style={styles.permSub}>
-          Dihadi uses your camera to recognise employee faces and mark
+          Qaans ERP uses your camera to recognise employee faces and mark
           attendance instantly. No data is uploaded.
         </Text>
         <View style={{ width: "100%", gap: 10, marginTop: 24 }}>

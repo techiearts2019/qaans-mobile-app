@@ -28,7 +28,7 @@ export default function Welcome() {
         <SafeAreaView edges={["top"]} style={styles.heroContent}>
           <View style={styles.brandRow}>
             <DihadiLogo size={44} variant="brand" />
-            <Text style={styles.brandText}>Dihadi</Text>
+            <Text style={styles.brandText}>Qaans ERP</Text>
           </View>
 
           <View style={styles.featureRow}>

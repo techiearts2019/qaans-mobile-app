@@ -209,9 +209,9 @@ async def send_otp_email(to_email: str, otp: str) -> None:
     message = EmailMessage()
     message["From"] = SMTP_FROM
     message["To"] = to_email
-    message["Subject"] = "Your Dihadi supervisor login code"
+    message["Subject"] = "Your Qaans ERP supervisor login code"
     message.set_content(
-        f"Your Dihadi login code is {otp}.\n\n"
+        f"Your Qaans ERP login code is {otp}.\n\n"
         f"It expires in {OTP_TTL_MINUTES} minutes and can only be used once. "
         "If you did not request it, ignore this email."
     )
