@@ -1,0 +1,45 @@
+{
+  "summary": "Round-2 verification of multi-face detection + enrolment quality gate for Qaans ERP Face Attendance. Backend: 12/12 new pytest tests in /app/backend/tests/test_face_quality_multi.py PASS (dark→422 'The image is too dark', white→422 'The image is over-exposed', blur→422, 0 faces→422 'No face detected.', 2 faces→422 'Detected N faces. Only one person should be in the frame during enrolment.', tiny/far-away face→422, happy path enroll→200 + subsequent /attendance/match returns matched=true faces_detected=1 dist<0.05; response schema exposes faces_detected:int + matches:list[{matched,distance,employee,attendance}]; two-COPY-same-face frame → faces_detected==2 but exactly ONE matches[].matched==true due to already_matched_ids dedupe; two DIFFERENT enrolled employees side-by-side → both matched with distinct employee IDs and TWO new AttendanceRecord rows created; backward-compat matched/employee/attendance top-level still point to first successful hit). Overall 19/19 tests pass (7 iter-1 regression + 12 iter-2). Frontend: web preview reaches /attendance, all requested testIDs render (enroll-face-button, close-attendance-button, mode-check-in, mode-check-out, flip-camera-button, close-enroll-modal, enroll-pick-DHD-1042 + siblings, change-enroll-employee, enroll-capture-button). Bottom hint code branches verified in source (facesInFrame>0 → 'N face(s) detected · Auto-punching', else 'Auto-detecting faces · N employees enrolled'). Match modal queue + resumeScan queue advance + 60s PER_EMPLOYEE_COOLDOWN_MS + 'Attendance marked · N more' badge + close-match-modal testID + enroll-error testID all verified by code inspection (web preview cannot exercise the multi-face render without a live 2-face camera feed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "attendance.tsx", "issues": ["Web-only warnings persist (harmless): 'shadow*' style props deprecated (use boxShadow), Animated useNativeDriver fallback, props.pointerEvents deprecated. All web-preview cosmetic — same as iter-1."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_face_attendance.py",
+    "/app/backend/tests/test_face_quality_multi.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iter2_results.xml"
+  ],
+  "action_items": [
+    "No functional fixes required — round-2 features (quality gate + multi-face) fully satisfy the review-request spec.",
+    "OPTIONAL (carry-over from iter-1): de-duplicate the redundant _load_image_from_url/_encode_face/_decode_b64_image helpers and the two `import json` statements in server.py.",
+    "OPTIONAL: the frontend enroll-error path is not exercised in web preview (needs a real bad camera frame). Consider a manual test on device with a very dark room to confirm the modal shows just the 422 detail text.",
+    "NOTE: server-side cooldown across FRAMES is intentionally NOT enforced (per review notes) — client-side PER_EMPLOYEE_COOLDOWN_MS = 60s + server-side in-frame `already_matched_ids` covers it. Verified test_same_face_twice_dedupes proves the in-frame guard works."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py _assess_enrolment gate order (brightness → sharpness → face detection → face-size %) is sensible; the blur test may trip the face-detector before the sharpness gate (expected behaviour, spec-compliant).",
+    "backend/server.py match_face pre-loads all employee encodings once per request — good for perf on ~5 seed employees; may need caching if enrolment count grows to hundreds.",
+    "backend/server.py match_face `already_matched_ids` prevents the SAME employee from being matched by two different faces in the same frame (both same-face-duplicate and identical-twin cases). Correct per spec.",
+    "backend/server.py match_face still contains dead `recent = ... if hasattr(AttendanceRecord, 'created_at') else None` cooldown scaffolding — no effect but should either be removed or wired to a real created_at timestamp.",
+    "frontend attendance.tsx runEnroll correctly extracts backend `detail` from the api.ts thrown Error message via JSON.parse from the first `{` — no raw HTTP status leaks into the UI.",
+    "frontend attendance.tsx multi-face queue: head shown immediately, tail queued; auto-dismiss 3s effect resumes scan or advances queue; per-employee 60s cooldown enforced via cooldownRef Map — no double-punch across frames.",
+    "frontend api.ts FaceMatchItem/FaceMatchResult types match backend Pydantic schema exactly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_face_quality_multi.py (new, 12 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 — 7 iter-1 regression + 12 iter-2 new)",
+    "frontend": "100% of testable UI paths on web preview (all testIDs render; multi-face render path & enroll-error path verified by code review as web preview cannot inject multi-face camera frames)"
+  },
+  "seed_data_creation": "Re-seeded OtpCode row (techiearts19@gmail.com, hash of '123456', 15-min TTL). Also enrolled a second active employee (non-DHD-1042) with a stock photo so the two-different-employees multi-face test could assert 2 distinct matches and 2 new AttendanceRecord rows. New attendance rows created during TestMultiFaceMatch runs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "OTP bypass pattern unchanged (see iter-1 report). Use $EXPO_PUBLIC_BACKEND_URL. For any future changes to _assess_enrolment thresholds (QUALITY_MIN_SHARPNESS=30, QUALITY_MIN_BRIGHTNESS=45, QUALITY_MAX_BRIGHTNESS=225, QUALITY_MIN_FACE_HEIGHT_FRAC=0.15), the assertions in test_face_quality_multi.py::TestEnrolQualityGate will need re-tuning. The blurred/far-away tests deliberately accept either the specific-quality-gate message OR 'No face detected.' because heavy blur/tiny faces trip the face-recognition detector before the numeric gate — this is per review-request note. If backend adds cross-frame server cooldown later, retest test_two_different_employees which expects 2 fresh attendance rows.",
+  "rca_of_issue": "No bug. Both new features implemented correctly per review-request spec — verified by 12 targeted pytest cases (all pass) + full UI walkthrough of Attendance screen testIDs and code review of the multi-face queue / enroll-error rendering paths."
+}

@@ -222,3 +222,41 @@ agent_communication:
       4) Same employee cannot be re-punched within 60s (cooldownRef).
 
       Test employee: DHD-1042 (Ramesh Kumar).
+
+  - agent: "main"
+    message: >
+      Round 2 changes — please re-verify Face Attendance:
+
+      BACKEND (server.py):
+      1) POST /api/employees/{emp_id}/enroll-face now runs a quality gate
+         BEFORE saving. Rejects with 422 + friendly `detail` when the image is
+         too dark, over-exposed, blurry, contains 0 or >1 faces, or the face
+         is <15% of the image height. Verified locally with
+         /tmp/quality_multi_smoke.py (dark, bright, blur all correctly 422).
+      2) POST /api/attendance/match now detects and matches EVERY face in the
+         frame (not just the first). Response gained two fields:
+           - `faces_detected: int`
+           - `matches: FaceMatchItem[]` (one entry per detected face)
+         The old `matched/employee/attendance` fields still point at the
+         first successful match for backward compatibility.
+         `already_matched_ids` prevents the same employee from being punched
+         twice within a single frame.
+
+      FRONTEND (attendance.tsx):
+      1) The polling handler iterates `res.matches`, applies the 60s
+         per-employee cooldown, and queues fresh matches. First match is
+         shown immediately; the rest are queued and shown one-after-another
+         as the auto-dismiss timer fires (3s each).
+      2) Match card badge shows "Attendance marked · N more" when queue > 0.
+      3) Enrol modal now surfaces the backend `detail` message directly
+         (parses "422 …: {json}") so users see "The image is too dark…"
+         instead of raw HTTP text.
+      4) Bottom hint switches from "Auto-detecting faces · X employees enrolled"
+         to "N face(s) detected · Auto-punching" when faces are in frame.
+
+      Please re-verify with pytest and a UI walk-through:
+        - Enrol accepts a good frame, rejects black/white/blurry frames.
+        - Match returns `matches` with faces_detected count.
+        - When two faces of the same employee are in the frame, only ONE
+          attendance record is created (per-frame dedupe).
+

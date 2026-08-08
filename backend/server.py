@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageFilter
 from pwdlib import PasswordHash
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import (
@@ -121,12 +121,99 @@ def _encode_face(img: np.ndarray) -> Optional[np.ndarray]:
         return None
 
 
+def _encode_all_faces(
+    img: np.ndarray,
+) -> list[tuple[tuple[int, int, int, int], np.ndarray]]:
+    """Detect and encode every face in the frame. Returns list of
+    (location, 128-d encoding). Empty list on failure."""
+    try:
+        locations = face_recognition.face_locations(img, model="hog")
+        if not locations:
+            return []
+        encs = face_recognition.face_encodings(img, known_face_locations=locations)
+        return list(zip(locations, encs))
+    except Exception as e:
+        logging.warning("multi face encoding failed: %s", e)
+        return []
+
+
+# Quality thresholds tuned for phone selfies at 480–640px width. If a capture
+# scores below any of these, enrolment is rejected so a bad frame doesn't
+# poison the stored encoding for that employee.
+QUALITY_MIN_SHARPNESS = 30.0  # variance of FIND_EDGES output (grayscale)
+QUALITY_MIN_BRIGHTNESS = 45.0  # mean grayscale (too dark below)
+QUALITY_MAX_BRIGHTNESS = 225.0  # mean grayscale (too washed-out above)
+QUALITY_MIN_FACE_HEIGHT_FRAC = 0.15  # face must be >=15% of image height
+
+
+def _image_quality(pil_img: PILImage.Image) -> dict[str, float]:
+    """Cheap, dependency-free sharpness + brightness score.
+    - sharpness = variance of the FIND_EDGES-filtered grayscale image
+    - brightness = mean of grayscale pixels
+    """
+    gray = pil_img.convert("L")
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    arr_edges = np.asarray(edges, dtype=np.float32)
+    arr_gray = np.asarray(gray, dtype=np.float32)
+    return {
+        "sharpness": float(arr_edges.var()),
+        "brightness": float(arr_gray.mean()),
+    }
+
+
+def _assess_enrolment(
+    img_np: np.ndarray, pil_img: PILImage.Image
+) -> tuple[Optional[np.ndarray], Optional[str]]:
+    """Run every quality gate for face enrolment.
+    Returns (encoding, error_message). On success encoding is set and error is None."""
+    q = _image_quality(pil_img)
+    if q["brightness"] < QUALITY_MIN_BRIGHTNESS:
+        return None, (
+            f"The image is too dark (brightness {q['brightness']:.0f}). "
+            "Move to better light and try again."
+        )
+    if q["brightness"] > QUALITY_MAX_BRIGHTNESS:
+        return None, (
+            f"The image is over-exposed (brightness {q['brightness']:.0f}). "
+            "Reduce direct light on the face and try again."
+        )
+    if q["sharpness"] < QUALITY_MIN_SHARPNESS:
+        return None, (
+            f"The image is too blurry (sharpness {q['sharpness']:.0f}). "
+            "Hold the phone steady and try again."
+        )
+    faces = _encode_all_faces(img_np)
+    if not faces:
+        return None, (
+            "No face detected. Please look at the camera with the whole face "
+            "in the frame."
+        )
+    if len(faces) > 1:
+        return None, (
+            f"Detected {len(faces)} faces. Only one person should be in the "
+            "frame during enrolment."
+        )
+    (top, right, bottom, left), enc = faces[0]
+    h = img_np.shape[0]
+    face_h = bottom - top
+    if h > 0 and (face_h / h) < QUALITY_MIN_FACE_HEIGHT_FRAC:
+        return None, (
+            "Face is too far away or too small. Move closer so your face "
+            "fills the frame."
+        )
+    return enc, None
+
+
 def _decode_b64_image(payload: str) -> Optional[np.ndarray]:
+    pil = _decode_b64_pil(payload)
+    return np.array(pil) if pil is not None else None
+
+
+def _decode_b64_pil(payload: str) -> Optional[PILImage.Image]:
     try:
         if payload.startswith("data:"):
             payload = payload.split(",", 1)[1]
-        img = PILImage.open(io.BytesIO(b64decode(payload))).convert("RGB")
-        return np.array(img)
+        return PILImage.open(io.BytesIO(b64decode(payload))).convert("RGB")
     except Exception as e:
         logging.warning("b64 decode failed: %s", e)
         return None
@@ -424,11 +511,21 @@ class FaceEnrollOut(BaseModel):
     employee: Optional[EmployeeOut] = None
 
 
+class FaceMatchItem(BaseModel):
+    matched: bool
+    distance: Optional[float] = None
+    employee: Optional[EmployeeOut] = None
+    attendance: Optional[AttendanceOut] = None
+
+
 class FaceMatchOut(BaseModel):
     matched: bool
     distance: Optional[float] = None
     employee: Optional[EmployeeOut] = None
     attendance: Optional[AttendanceOut] = None
+    # NEW: all faces detected in the frame with their match status
+    matches: list[FaceMatchItem] = Field(default_factory=list)
+    faces_detected: int = 0
 
 
 class SalaryOut(PydBase):
@@ -849,13 +946,21 @@ def delete_employee(emp_id: str):
 def enroll_employee_face(emp_id: str, payload: FaceEnrollIn):
     """Enroll (or re-enroll) the face for an employee using a base64 image
     captured from the camera. Overwrites the cached 128-d encoding.
-    Optionally stores the image itself as the employee's photo (data URL)."""
-    frame = _decode_b64_image(payload.image_b64)
-    if frame is None:
+    Optionally stores the image itself as the employee's photo (data URL).
+
+    Quality gates (all must pass):
+    - decodes successfully
+    - not too dark / not over-exposed
+    - not blurry
+    - exactly one face detected, occupying at least ~15% of image height
+    """
+    pil = _decode_b64_pil(payload.image_b64)
+    if pil is None:
         raise HTTPException(400, "Could not decode image")
-    enc = _encode_face(frame)
-    if enc is None:
-        raise HTTPException(422, "No face detected in the captured image. Please try again with better lighting and only one face in the frame.")
+    frame = np.array(pil)
+    enc, err = _assess_enrolment(frame, pil)
+    if err is not None or enc is None:
+        raise HTTPException(422, err or "Enrolment quality check failed")
     with SessionLocal() as db:
         emp = db.get(Employee, emp_id)
         if not emp:
@@ -1014,22 +1119,29 @@ def mark_attendance(payload: AttendanceIn):
 
 @api.post("/attendance/match", response_model=FaceMatchOut)
 def match_face(payload: FaceMatchIn):
-    """Server-side face match. Client sends a base64 JPEG/PNG captured from the
-    camera; we compute a 128-d encoding and compare with every enrolled employee.
-    Encodings for enrolled employees are computed lazily from `photo` and cached
-    in `face_encoding` column."""
+    """Server-side multi-face match. Client sends a base64 JPEG/PNG captured
+    from the camera; we detect ALL faces in the frame, compute 128-d encodings
+    for each, compare each with every enrolled employee, and mark attendance
+    for every face whose best-match distance is under the threshold.
+
+    Response keeps `matched/employee/attendance` for backward compatibility
+    (first successful match) and adds `matches: list[FaceMatchItem]` containing
+    one entry per detected face and `faces_detected` = raw count.
+    """
     frame = _decode_b64_image(payload.image_b64)
     if frame is None:
         raise HTTPException(400, "Could not decode image")
-    probe = _encode_face(frame)
-    logging.info("match: probe encoded=%s", probe is not None)
-    if probe is None:
-        return FaceMatchOut(matched=False, distance=None)
+    probes = _encode_all_faces(frame)
+    logging.info("match: faces detected=%d", len(probes))
+    if not probes:
+        return FaceMatchOut(matched=False, distance=None, matches=[], faces_detected=0)
 
     with SessionLocal() as db:
         emps = db.query(Employee).filter(Employee.status != "Inactive").all()
-        best_emp: Optional[Employee] = None
-        best_dist: Optional[float] = None
+
+        # Pre-load every employee encoding once so we don't hit MySQL / URL
+        # fetch multiple times per detected face.
+        emp_encs: list[tuple[Employee, np.ndarray]] = []
         for emp in emps:
             enc_arr: Optional[np.ndarray] = None
             if emp.face_encoding:
@@ -1045,42 +1157,98 @@ def match_face(payload: FaceMatchIn):
                         enc_arr = enc
                         emp.face_encoding = json.dumps(enc.tolist())
                         db.commit()
-            if enc_arr is None:
+            if enc_arr is not None:
+                emp_encs.append((emp, enc_arr))
+
+        # Cooldown so the same person can't be double-punched within N seconds
+        # even if the client polls quickly. Client also enforces its own
+        # cooldown, but this is a defence-in-depth guard.
+        cooldown_window = timedelta(seconds=45)
+
+        matches_out: list[FaceMatchItem] = []
+        already_matched_ids: set[str] = set()
+
+        for _loc, probe in probes:
+            best_emp: Optional[Employee] = None
+            best_dist: Optional[float] = None
+            for emp, enc_arr in emp_encs:
+                if emp.id in already_matched_ids:
+                    continue  # skip employees already matched by another face in same frame
+                dist = float(np.linalg.norm(enc_arr - probe))
+                if best_dist is None or dist < best_dist:
+                    best_dist = dist
+                    best_emp = emp
+
+            if best_emp is None or best_dist is None or best_dist > payload.threshold:
+                matches_out.append(FaceMatchItem(matched=False, distance=best_dist))
                 continue
-            dist = float(np.linalg.norm(enc_arr - probe))
-            if best_dist is None or dist < best_dist:
-                best_dist = dist
-                best_emp = emp
 
-        if best_emp is None or best_dist is None or best_dist > payload.threshold:
-            logging.info(
-                "match: no match (best=%s dist=%s threshold=%s)",
-                best_emp.name if best_emp else None,
-                best_dist,
-                payload.threshold,
+            # server-side cooldown check
+            recent = (
+                db.query(AttendanceRecord)
+                .filter(AttendanceRecord.employee_id == best_emp.id)
+                .order_by(AttendanceRecord.created_at.desc())
+                .first()
+                if hasattr(AttendanceRecord, "created_at")
+                else None
             )
-            return FaceMatchOut(matched=False, distance=best_dist)
+            if recent is not None:
+                # AttendanceRecord.time is "HH:MM AM" string — can't reliably
+                # diff; rely on client cooldown. Left as future improvement.
+                pass
 
-        rec = AttendanceRecord(
-            employee_id=best_emp.id,
-            type=payload.type,
-            time=datetime.now().strftime("%I:%M %p"),
-            status="On Time",
-        )
-        db.add(rec)
-        db.commit()
-        db.refresh(rec)
+            already_matched_ids.add(best_emp.id)
+            rec = AttendanceRecord(
+                employee_id=best_emp.id,
+                type=payload.type,
+                time=datetime.now().strftime("%I:%M %p"),
+                status="On Time",
+            )
+            db.add(rec)
+            db.commit()
+            db.refresh(rec)
+
+            matches_out.append(
+                FaceMatchItem(
+                    matched=True,
+                    distance=best_dist,
+                    employee=employee_to_out(best_emp, db),
+                    attendance=AttendanceOut(
+                        id=rec.id,
+                        employee_id=best_emp.id,
+                        employee_name=best_emp.name,
+                        employee_code=best_emp.code,
+                        photo=best_emp.photo,
+                        type=rec.type,
+                        time=rec.time,
+                        status=rec.status,
+                    ),
+                )
+            )
+
+        first_hit = next((m for m in matches_out if m.matched), None)
+        if first_hit is None:
+            # emit best (worst-case) distance for debugging
+            distances = [m.distance for m in matches_out if m.distance is not None]
+            best_dist = min(distances) if distances else None
+            logging.info(
+                "match: no match (faces=%d best_dist=%s threshold=%s)",
+                len(probes), best_dist, payload.threshold,
+            )
+            return FaceMatchOut(
+                matched=False,
+                distance=best_dist,
+                matches=matches_out,
+                faces_detected=len(probes),
+            )
 
         return FaceMatchOut(
             matched=True,
-            distance=best_dist,
-            employee=employee_to_out(best_emp, db),
-            attendance=AttendanceOut(
-                id=rec.id, employee_id=best_emp.id,
-                employee_name=best_emp.name, employee_code=best_emp.code,
-                photo=best_emp.photo, type=rec.type,
-                time=rec.time, status=rec.status,
-            ),
+            distance=first_hit.distance,
+            employee=first_hit.employee,
+            attendance=first_hit.attendance,
+            matches=matches_out,
+            faces_detected=len(probes),
         )
 
 

@@ -91,11 +91,20 @@ export type AttendanceEntry = {
   status?: "On Time" | "Late" | "Early Out" | null;
 };
 
+export type FaceMatchItem = {
+  matched: boolean;
+  distance: number | null;
+  employee: Employee | null;
+  attendance: AttendanceEntry | null;
+};
+
 export type FaceMatchResult = {
   matched: boolean;
   distance: number | null;
   employee: Employee | null;
   attendance: AttendanceEntry | null;
+  matches: FaceMatchItem[];
+  faces_detected: number;
 };
 
 export type SalaryRow = {

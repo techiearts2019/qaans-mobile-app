@@ -21,7 +21,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "@/src/components/PrimaryButton";
-import { api, Employee, FaceMatchResult } from "@/src/lib/api";
+import { api, Employee, FaceMatchItem, FaceMatchResult } from "@/src/lib/api";
 import { colors, radius, shadow } from "@/src/theme/colors";
 
 type Phase = "idle" | "scanning" | "matched";
@@ -40,6 +40,8 @@ export default function FaceAttendance() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [matched, setMatched] = useState<FaceMatchResult["employee"] | null>(null);
   const [matchTime, setMatchTime] = useState<string>("");
+  const [facesInFrame, setFacesInFrame] = useState(0);
+  const [matchQueue, setMatchQueue] = useState<FaceMatchItem[]>([]);
   const [inFlight, setInFlight] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollEmp, setEnrollEmp] = useState<Employee | null>(null);
@@ -170,28 +172,39 @@ export default function FaceAttendance() {
           threshold: 0.6,
         });
         if (cancelled) return;
-        if (res.matched && res.employee) {
-          // per-employee cooldown so same face doesn't punch repeatedly
-          const empId = res.employee.id;
-          const lastAt = cooldownRef.current.get(empId) ?? 0;
-          const now = Date.now();
-          if (now - lastAt < PER_EMPLOYEE_COOLDOWN_MS) {
-            // suppress duplicate and keep scanning
-            return;
-          }
-          cooldownRef.current.set(empId, now);
 
-          setMatched(res.employee);
-          setMatchTime(res.attendance?.time ?? "");
-          setPhase("matched");
-          try {
-            Speech.speak(
-              `${res.employee.name_hi ?? res.employee.name} की हाजिरी लग गई है`,
-              { language: "hi-IN", rate: 0.95 }
-            );
-          } catch {
-            // noop
-          }
+        setFacesInFrame(res.faces_detected ?? 0);
+
+        // Iterate all matches, apply per-employee cooldown, then queue new ones
+        const successful = (res.matches ?? []).filter(
+          (m) => m.matched && m.employee
+        );
+        if (successful.length === 0) return;
+
+        const now = Date.now();
+        const fresh: FaceMatchItem[] = [];
+        for (const m of successful) {
+          const empId = m.employee!.id;
+          const lastAt = cooldownRef.current.get(empId) ?? 0;
+          if (now - lastAt < PER_EMPLOYEE_COOLDOWN_MS) continue;
+          cooldownRef.current.set(empId, now);
+          fresh.push(m);
+        }
+        if (fresh.length === 0) return;
+
+        // Show the first one immediately, queue the rest
+        const [head, ...tail] = fresh;
+        setMatched(head.employee);
+        setMatchTime(head.attendance?.time ?? "");
+        setMatchQueue(tail);
+        setPhase("matched");
+        try {
+          Speech.speak(
+            `${head.employee!.name_hi ?? head.employee!.name} की हाजिरी लग गई है`,
+            { language: "hi-IN", rate: 0.95 }
+          );
+        } catch {
+          // noop
         }
       } catch (e) {
         // ignore transient errors and keep scanning
@@ -217,17 +230,41 @@ export default function FaceAttendance() {
     } catch {
       // noop
     }
-    setMatched(null);
-    setMatchTime("");
-    setPhase("scanning");
+    // If there are queued matches from a multi-face frame, advance to the next
+    // instead of returning to scanning immediately.
+    setMatchQueue((q) => {
+      if (q.length > 0) {
+        const [head, ...tail] = q;
+        setMatched(head.employee);
+        setMatchTime(head.attendance?.time ?? "");
+        // keep phase = "matched" and (re)start auto-dismiss via the effect below
+        try {
+          if (head.employee) {
+            Speech.speak(
+              `${head.employee.name_hi ?? head.employee.name} की हाजिरी लग गई है`,
+              { language: "hi-IN", rate: 0.95 }
+            );
+          }
+        } catch {
+          // noop
+        }
+        return tail;
+      }
+      // queue empty → back to live scanning
+      setMatched(null);
+      setMatchTime("");
+      setPhase("scanning");
+      return q;
+    });
   }, []);
 
-  // Auto-dismiss match modal after MATCH_MODAL_AUTOCLOSE_MS so the flow stays hands-free
+  // Auto-dismiss match modal after MATCH_MODAL_AUTOCLOSE_MS so the flow stays hands-free.
+  // Re-arms when `matched` changes (e.g. advancing through a multi-face queue).
   useEffect(() => {
     if (phase !== "matched") return;
     const t = setTimeout(resumeScan, MATCH_MODAL_AUTOCLOSE_MS);
     return () => clearTimeout(t);
-  }, [phase, resumeScan]);
+  }, [phase, matched, resumeScan]);
 
   const openEnroll = useCallback(() => {
     setEnrollError(null);
@@ -268,8 +305,18 @@ export default function FaceAttendance() {
       // reset cooldown for this employee so first scan after enroll punches immediately
       cooldownRef.current.delete(enrollEmp.id);
     } catch (e: unknown) {
-      const msg =
+      // Backend returns HTTPException with detail — extract friendly message
+      let msg =
         e instanceof Error ? e.message : "Enrollment failed. Try again.";
+      const jsonStart = msg.indexOf("{");
+      if (jsonStart >= 0) {
+        try {
+          const parsed = JSON.parse(msg.slice(jsonStart));
+          if (typeof parsed?.detail === "string") msg = parsed.detail;
+        } catch {
+          // keep original
+        }
+      }
       setEnrollError(msg);
     } finally {
       setEnrollBusy(false);
@@ -476,7 +523,9 @@ export default function FaceAttendance() {
           })}
         </View>
         <Text style={styles.bottomHint}>
-          Auto-detecting faces · {employees.length} employees enrolled
+          {facesInFrame > 0
+            ? `${facesInFrame} face${facesInFrame > 1 ? "s" : ""} detected · Auto-punching`
+            : `Auto-detecting faces · ${employees.length} employees enrolled`}
         </Text>
       </View>
 
@@ -491,7 +540,11 @@ export default function FaceAttendance() {
                   size={16}
                   color={colors.success}
                 />
-                <Text style={styles.badgeGreenText}>Attendance marked</Text>
+                <Text style={styles.badgeGreenText}>
+                  {matchQueue.length > 0
+                    ? `Attendance marked · ${matchQueue.length} more`
+                    : "Attendance marked"}
+                </Text>
               </View>
               <Pressable
                 onPress={resumeScan}
