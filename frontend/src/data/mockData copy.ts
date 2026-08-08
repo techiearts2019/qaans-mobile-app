@@ -187,16 +187,24 @@ export const designations = [
   "Senior Supervisor",
   "Upholster",
   "Worker",
-  "Welder",
+  "Welder"
 ];
 
 export const skills = [
+  "Bricklaying",
+  "Wiring",
+  "Plumbing",
+  "Carpentry",
+  "Welding",
+  "Painting",
+  "General Labour",
   "Helper",
   "Semi Skilled",
-  "Skilled",
+  "Skilled"
+  "Supervision",
 ];
 
-export const genders = ["Male", "Female"];
+export const genders = ["Male", "Female", "Other"];
 export const maritalStatuses = ["Single", "Married", "Divorced", "Widowed"];
 
 export type ProjectStatus = "Active" | "Completed" | "On Hold";
@@ -259,10 +267,10 @@ export function projectFor(employeeId: string): Project | undefined {
 }
 
 export const supervisor = {
-  name: "Jamil",
-  code: "SUP-0001",
-  email: "admin@qaans.com",
-  phone: "+91 72900 85403",
+  name: "Rajesh Verma",
+  code: "SUP-0007",
+  email: "rajesh.verma@dihadi.in",
+  phone: "+91 99999 88888",
   designation: "Senior Supervisor",
   joiningDate: "12 Jan 2022",
   photo:

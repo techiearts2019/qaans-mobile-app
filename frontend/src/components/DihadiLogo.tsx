@@ -9,7 +9,7 @@ type Props = {
 };
 
 // Use the project logo asset. Static require so Metro bundles it.
-const LOGO_SOURCE = require("@/assets/images/dihadi-logo.png");
+const LOGO_SOURCE = require("@/assets/images/qaans-logo.png");
 
 export function DihadiLogo({ size = 64 }: Props) {
   return (
