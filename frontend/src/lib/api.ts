@@ -235,6 +235,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  enrollFace: (
+    employeeId: string,
+    payload: { image_b64: string; update_photo?: boolean }
+  ) =>
+    request<{ ok: boolean; message: string; employee: Employee | null }>(
+      `/employees/${employeeId}/enroll-face`,
+      {
+        method: "POST",
+        body: JSON.stringify({ update_photo: true, ...payload }),
+      }
+    ),
+
   salary: (month?: string) =>
     request<SalaryRow[]>("/salary", { params: { month } }),
 

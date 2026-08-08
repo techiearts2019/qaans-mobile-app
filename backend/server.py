@@ -448,7 +448,18 @@ class AttendanceIn(BaseModel):
 class FaceMatchIn(BaseModel):
     image_b64: str
     type: str = Field(default="Check-in", pattern="^(Check-in|Check-out)$")
-    threshold: float = Field(default=0.55, ge=0.30, le=0.80)
+    threshold: float = Field(default=0.60, ge=0.30, le=0.80)
+
+
+class FaceEnrollIn(BaseModel):
+    image_b64: str
+    update_photo: bool = True
+
+
+class FaceEnrollOut(BaseModel):
+    ok: bool
+    message: str
+    employee: Optional[EmployeeOut] = None
 
 
 class FaceMatchOut(BaseModel):
@@ -589,10 +600,35 @@ def seed_if_empty() -> None:
 
 
 # --------------------------------------------------------- app / lifespan --
+def warm_face_encodings() -> None:
+    """Compute + cache face_encoding for enrolled employees whose photo is a URL.
+    Runs at startup so the first match request doesn't stall fetching photos."""
+    with SessionLocal() as db:
+        emps = db.query(Employee).filter(
+            Employee.face_encoding.is_(None), Employee.photo.isnot(None)
+        ).all()
+        for emp in emps:
+            if not emp.photo or not emp.photo.startswith("http"):
+                continue
+            img = _load_image_from_url(emp.photo)
+            if img is None:
+                continue
+            enc = _encode_face(img)
+            if enc is None:
+                continue
+            emp.face_encoding = json.dumps(enc.tolist())
+            db.commit()
+            logging.info("cached encoding for %s", emp.name)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_if_empty()
+    try:
+        warm_face_encodings()
+    except Exception as e:
+        logging.warning("warm_face_encodings failed: %s", e)
     yield
 
 
@@ -847,6 +883,38 @@ def delete_employee(emp_id: str):
         return {"ok": True}
 
 
+@api.post("/employees/{emp_id}/enroll-face", response_model=FaceEnrollOut)
+def enroll_employee_face(emp_id: str, payload: FaceEnrollIn):
+    """Enroll (or re-enroll) the face for an employee using a base64 image
+    captured from the camera. Overwrites the cached 128-d encoding.
+    Optionally stores the image itself as the employee's photo (data URL)."""
+    frame = _decode_b64_image(payload.image_b64)
+    if frame is None:
+        raise HTTPException(400, "Could not decode image")
+    enc = _encode_face(frame)
+    if enc is None:
+        raise HTTPException(422, "No face detected in the captured image. Please try again with better lighting and only one face in the frame.")
+    with SessionLocal() as db:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            raise HTTPException(404, "Employee not found")
+        emp.face_encoding = json.dumps(enc.tolist())
+        if payload.update_photo:
+            # store the captured selfie as the employee's photo
+            b64 = payload.image_b64
+            if not b64.startswith("data:"):
+                b64 = f"data:image/jpeg;base64,{b64}"
+            emp.photo = b64
+        db.commit()
+        db.refresh(emp)
+        logging.info("enrolled face for %s (%s)", emp.name, emp.code)
+        return FaceEnrollOut(
+            ok=True,
+            message=f"Face enrolled for {emp.name}",
+            employee=employee_to_out(emp, db),
+        )
+
+
 # ---- projects ----
 @api.get("/projects", response_model=list[ProjectOut])
 def list_projects(status: Optional[str] = None, q: Optional[str] = None):
@@ -992,6 +1060,7 @@ def match_face(payload: FaceMatchIn):
     if frame is None:
         raise HTTPException(400, "Could not decode image")
     probe = _encode_face(frame)
+    logging.info("match: probe encoded=%s", probe is not None)
     if probe is None:
         return FaceMatchOut(matched=False, distance=None)
 
@@ -1022,6 +1091,12 @@ def match_face(payload: FaceMatchIn):
                 best_emp = emp
 
         if best_emp is None or best_dist is None or best_dist > payload.threshold:
+            logging.info(
+                "match: no match (best=%s dist=%s threshold=%s)",
+                best_emp.name if best_emp else None,
+                best_dist,
+                payload.threshold,
+            )
             return FaceMatchOut(matched=False, distance=best_dist)
 
         rec = AttendanceRecord(

@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Speech from "expo-speech";
 import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Easing,
+  FlatList,
   Modal,
   Pressable,
   StyleSheet,
@@ -23,6 +26,10 @@ import { colors, radius, shadow } from "@/src/theme/colors";
 
 type Phase = "idle" | "scanning" | "matched";
 
+const MATCH_INTERVAL_MS = 1500;
+const MATCH_MODAL_AUTOCLOSE_MS = 3000;
+const PER_EMPLOYEE_COOLDOWN_MS = 60_000;
+
 export default function FaceAttendance() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
@@ -33,8 +40,15 @@ export default function FaceAttendance() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [matched, setMatched] = useState<FaceMatchResult["employee"] | null>(null);
   const [matchTime, setMatchTime] = useState<string>("");
+  const [inFlight, setInFlight] = useState(false);
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollEmp, setEnrollEmp] = useState<Employee | null>(null);
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
   const busyRef = useRef(false);
+  // cooldown so the same person doesn't double-punch within 60s
+  const cooldownRef = useRef<Map<string, number>>(new Map());
 
   // animations
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -118,7 +132,7 @@ export default function FaceAttendance() {
     ).start();
   }, [phase, scanLine, ringPulse, cornerOpacity]);
 
-  // Real face match — capture a frame every ~2.5s and POST to /api/attendance/match
+  // Real face match — capture a frame every MATCH_INTERVAL_MS and POST to /api/attendance/match
   useEffect(() => {
     if (!isFocused) return;
     if (phase !== "scanning") return;
@@ -130,20 +144,43 @@ export default function FaceAttendance() {
       const cam = cameraRef.current;
       if (!cam) return;
       busyRef.current = true;
+      setInFlight(true);
       try {
         const pic = await cam.takePictureAsync({
-          quality: 0.35,
-          base64: true,
+          quality: 0.5,
+          base64: false,
           skipProcessing: true,
           shutterSound: false,
         });
-        if (cancelled || !pic?.base64) return;
+        if (cancelled || !pic?.uri) return;
+
+        // Downscale to 480px wide so backend HOG detection is fast and payload stays tiny
+        const ctx = ImageManipulator.manipulate(pic.uri).resize({ width: 480 });
+        const rendered = await ctx.renderAsync();
+        const small = await rendered.saveAsync({
+          format: SaveFormat.JPEG,
+          compress: 0.6,
+          base64: true,
+        });
+        if (cancelled || !small.base64) return;
+
         const res = await api.matchFace({
-          image_b64: pic.base64,
+          image_b64: small.base64,
           type: action,
+          threshold: 0.6,
         });
         if (cancelled) return;
         if (res.matched && res.employee) {
+          // per-employee cooldown so same face doesn't punch repeatedly
+          const empId = res.employee.id;
+          const lastAt = cooldownRef.current.get(empId) ?? 0;
+          const now = Date.now();
+          if (now - lastAt < PER_EMPLOYEE_COOLDOWN_MS) {
+            // suppress duplicate and keep scanning
+            return;
+          }
+          cooldownRef.current.set(empId, now);
+
           setMatched(res.employee);
           setMatchTime(res.attendance?.time ?? "");
           setPhase("matched");
@@ -161,10 +198,11 @@ export default function FaceAttendance() {
         console.warn("match tick failed", e);
       } finally {
         busyRef.current = false;
+        setInFlight(false);
       }
     };
 
-    const t = setInterval(tick, 2500);
+    const t = setInterval(tick, MATCH_INTERVAL_MS);
     // fire once immediately
     tick();
     return () => {
@@ -173,12 +211,75 @@ export default function FaceAttendance() {
     };
   }, [phase, isFocused, action]);
 
-  const resumeScan = () => {
-    Speech.stop();
+  const resumeScan = useCallback(() => {
+    try {
+      Speech.stop();
+    } catch {
+      // noop
+    }
     setMatched(null);
     setMatchTime("");
     setPhase("scanning");
-  };
+  }, []);
+
+  // Auto-dismiss match modal after MATCH_MODAL_AUTOCLOSE_MS so the flow stays hands-free
+  useEffect(() => {
+    if (phase !== "matched") return;
+    const t = setTimeout(resumeScan, MATCH_MODAL_AUTOCLOSE_MS);
+    return () => clearTimeout(t);
+  }, [phase, resumeScan]);
+
+  const openEnroll = useCallback(() => {
+    setEnrollError(null);
+    setEnrollEmp(null);
+    setEnrollOpen(true);
+  }, []);
+
+  const runEnroll = useCallback(async () => {
+    const cam = cameraRef.current;
+    if (!cam || !enrollEmp) return;
+    setEnrollBusy(true);
+    setEnrollError(null);
+    try {
+      const pic = await cam.takePictureAsync({
+        quality: 0.7,
+        base64: false,
+        skipProcessing: true,
+        shutterSound: false,
+      });
+      if (!pic?.uri) throw new Error("Camera capture failed");
+      const ctx = ImageManipulator.manipulate(pic.uri).resize({ width: 640 });
+      const rendered = await ctx.renderAsync();
+      const small = await rendered.saveAsync({
+        format: SaveFormat.JPEG,
+        compress: 0.75,
+        base64: true,
+      });
+      if (!small.base64) throw new Error("Could not encode capture");
+      const res = await api.enrollFace(enrollEmp.id, {
+        image_b64: small.base64,
+        update_photo: true,
+      });
+      if (!res.ok) throw new Error(res.message || "Enrollment failed");
+      // refresh employees list so new photo shows up
+      const list = await api.listEmployees();
+      setEmployees(list);
+      setEnrollOpen(false);
+      // reset cooldown for this employee so first scan after enroll punches immediately
+      cooldownRef.current.delete(enrollEmp.id);
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error ? e.message : "Enrollment failed. Try again.";
+      setEnrollError(msg);
+    } finally {
+      setEnrollBusy(false);
+    }
+  }, [enrollEmp]);
+
+  const sortedEmployees = useMemo(
+    () => [...employees].sort((a, b) => a.name.localeCompare(b.name)),
+    [employees]
+  );
 
   if (!permission) {
     return <View style={styles.permWrap} />;
@@ -257,22 +358,36 @@ export default function FaceAttendance() {
         </Pressable>
 
         <View style={styles.statusPill}>
-          <View style={styles.statusDot} />
+          {phase === "scanning" && inFlight ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <View style={styles.statusDot} />
+          )}
           <Text style={styles.statusText}>
             {phase === "matched" ? "Match found" : "Scanning…"}
           </Text>
         </View>
 
-        <Pressable
-          testID="flip-camera-button"
-          onPress={() =>
-            setFacing((f) => (f === "front" ? "back" : "front"))
-          }
-          style={styles.iconBtn}
-          hitSlop={10}
-        >
-          <Ionicons name="camera-reverse-outline" size={20} color={colors.white} />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Pressable
+            testID="enroll-face-button"
+            onPress={openEnroll}
+            style={styles.iconBtn}
+            hitSlop={10}
+          >
+            <Ionicons name="person-add-outline" size={20} color={colors.white} />
+          </Pressable>
+          <Pressable
+            testID="flip-camera-button"
+            onPress={() =>
+              setFacing((f) => (f === "front" ? "back" : "front"))
+            }
+            style={styles.iconBtn}
+            hitSlop={10}
+          >
+            <Ionicons name="camera-reverse-outline" size={20} color={colors.white} />
+          </Pressable>
+        </View>
       </SafeAreaView>
 
       {/* Frame */}
@@ -461,6 +576,107 @@ export default function FaceAttendance() {
               label="Continue Scanning"
               onPress={resumeScan}
               iconRight="scan-outline"
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Enroll face modal */}
+      <Modal
+        visible={enrollOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEnrollOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.enrollCard}>
+            <View style={styles.matchTopRow}>
+              <Text style={styles.enrollTitle}>Enroll face</Text>
+              <Pressable
+                onPress={() => setEnrollOpen(false)}
+                hitSlop={10}
+                testID="close-enroll-modal"
+              >
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={styles.enrollSub}>
+              {enrollEmp
+                ? "Look directly at the camera in good light, then tap Capture."
+                : "Choose the employee to link with the face in front of the camera."}
+            </Text>
+
+            {enrollEmp ? (
+              <View style={styles.enrollSelected}>
+                <Image
+                  source={{ uri: enrollEmp.photo ?? undefined }}
+                  style={styles.enrollAvatar}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.enrollName}>{enrollEmp.name}</Text>
+                  <Text style={styles.enrollMeta}>
+                    {enrollEmp.code}
+                    {enrollEmp.designation ? ` · ${enrollEmp.designation}` : ""}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setEnrollEmp(null)}
+                  hitSlop={10}
+                  testID="change-enroll-employee"
+                >
+                  <Text style={styles.changeLink}>Change</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <FlatList
+                data={sortedEmployees}
+                keyExtractor={(item) => item.id}
+                style={{ maxHeight: 260, marginTop: 12 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <Pressable
+                    testID={`enroll-pick-${item.code}`}
+                    onPress={() => setEnrollEmp(item)}
+                    style={styles.enrollRow}
+                  >
+                    <Image
+                      source={{ uri: item.photo ?? undefined }}
+                      style={styles.enrollAvatarSm}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.enrollName}>{item.name}</Text>
+                      <Text style={styles.enrollMeta}>
+                        {item.code}
+                        {item.designation ? ` · ${item.designation}` : ""}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color={colors.textSecondary}
+                    />
+                  </Pressable>
+                )}
+                ItemSeparatorComponent={() => (
+                  <View style={styles.enrollSep} />
+                )}
+              />
+            )}
+
+            {enrollError ? (
+              <Text style={styles.enrollErr} testID="enroll-error">
+                {enrollError}
+              </Text>
+            ) : null}
+
+            <View style={{ height: 12 }} />
+            <PrimaryButton
+              testID="enroll-capture-button"
+              label={enrollBusy ? "Enrolling…" : "Capture & Enroll"}
+              onPress={runEnroll}
+              iconRight="camera"
+              disabled={!enrollEmp || enrollBusy}
+              loading={enrollBusy}
             />
           </View>
         </View>
@@ -767,6 +983,80 @@ const styles = StyleSheet.create({
   audioHintText: {
     color: colors.brand,
     fontSize: 12,
+    fontWeight: "600",
+  },
+  enrollCard: {
+    width: "100%",
+    backgroundColor: colors.white,
+    borderRadius: radius.xxl,
+    padding: 20,
+    ...shadow.strong,
+  },
+  enrollTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  enrollSub: {
+    marginTop: 6,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  enrollRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  enrollSep: {
+    height: 1,
+    backgroundColor: colors.borderStrong,
+    opacity: 0.15,
+    marginLeft: 52,
+  },
+  enrollAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: colors.borderStrong,
+  },
+  enrollAvatarSm: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: colors.borderStrong,
+  },
+  enrollSelected: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 14,
+    padding: 12,
+    backgroundColor: colors.brandSoft,
+    borderRadius: radius.lg,
+  },
+  enrollName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  enrollMeta: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  changeLink: {
+    color: colors.brand,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  enrollErr: {
+    marginTop: 10,
+    color: colors.danger ?? "#DC2626",
+    fontSize: 13,
     fontWeight: "600",
   },
 });

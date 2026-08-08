@@ -101,3 +101,124 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: >
+  Face Attendance screen must show a full-screen live camera, automatically mark
+  check-in/check-out when a face matches an image stored in the database, keep
+  scanning on failed matches, display the matched employee name in English and
+  Hindi, and announce the name via Hindi audio (TTS).
+
+backend:
+  - task: "POST /api/employees/{emp_id}/enroll-face"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: >
+          New endpoint. Accepts {image_b64, update_photo}. Decodes JPEG, runs
+          face_recognition.face_encodings, stores 128-d encoding in JSON column
+          and (if update_photo=true) overwrites employee.photo with the data URL.
+          Requires Bearer auth. Verified locally with /tmp/enroll_smoke.py:
+          returns 200 and subsequent /attendance/match returns matched=true dist=0.0.
+
+  - task: "POST /api/attendance/match"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: >
+          Distance threshold set to 0.60 (relaxed from 0.55). face_encodings for
+          seeded employees are warmed up at app startup (see warm_face_encodings).
+          Verified /tmp/enroll_smoke.py end-to-end match works after enrollment.
+
+frontend:
+  - task: "Face Attendance auto-detect and mark"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/attendance.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: >
+          Poll interval reduced to 1500ms. takePictureAsync captures are
+          downscaled to 480px @ JPEG q=0.6 with expo-image-manipulator before
+          POST. Match modal auto-dismisses after 3s (hands-free) and 60s
+          per-employee cooldown prevents double-punch. Hindi TTS announcement
+          via expo-speech remains. Scanning ActivityIndicator surfaces network
+          activity.
+
+  - task: "Enroll face flow (in-app)"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/attendance.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: >
+          New person-add icon in the Attendance top bar opens a bottom-sheet-
+          style modal listing all employees. Picking one and tapping
+          "Capture & Enroll" captures the current camera frame, downscales it,
+          and POSTs to /api/employees/{id}/enroll-face. On success, the
+          employees list is refreshed and the modal closes. Errors (no face
+          detected, 422/etc) surface via testID="enroll-error".
+
+metadata:
+  created_by: "main_agent"
+  version: "1.1"
+  test_sequence: 2
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "POST /api/employees/{emp_id}/enroll-face"
+    - "POST /api/attendance/match"
+    - "Enroll face flow (in-app)"
+    - "Face Attendance auto-detect and mark"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: >
+      Please test the newly implemented Enroll Face endpoint and the polished
+      Face Attendance screen. Auth credentials for automated testing are in
+      /app/memory/test_credentials.md (email techiearts19@gmail.com; OTP row
+      can be seeded directly with pwdlib PasswordHash.recommended().hash('123456')).
+
+      Backend focus:
+      1) POST /api/employees/{emp_id}/enroll-face
+         - Requires Bearer token; 401 without.
+         - Rejects payload without a detectable face (422).
+         - On success, updates employee.face_encoding (and photo if update_photo=true).
+         - Follow-up /api/attendance/match with the SAME base64 payload should return matched=true with distance close to 0.
+      2) POST /api/attendance/match unchanged interface, threshold=0.60.
+
+      Frontend focus (Attendance screen):
+      1) Full-screen CameraView renders. Status pill shows "Scanning…" and an
+         ActivityIndicator flickers while requests are in flight.
+      2) Tapping the person-add icon opens the Enroll modal. Picking an
+         employee shows the selected row. Tapping "Capture & Enroll"
+         (testID="enroll-capture-button") calls the enroll endpoint.
+      3) On successful match, the modal appears with English + Hindi names,
+         Hindi TTS is announced via expo-speech, and the modal auto-dismisses
+         after 3s to resume scanning without user input.
+      4) Same employee cannot be re-punched within 60s (cooldownRef).
+
+      Test employee: DHD-1042 (Ramesh Kumar).
