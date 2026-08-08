@@ -167,44 +167,6 @@ def decode_access_token(token: str) -> dict:
         )
 
 
-def _load_image_from_url(url: str) -> Optional[np.ndarray]:
-    try:
-        req = Request(url, headers={"User-Agent": "dihadi/1.0"})
-        with urlopen(req, timeout=8) as r:
-            data = r.read()
-        img = PILImage.open(io.BytesIO(data)).convert("RGB")
-        return np.array(img)
-    except Exception as e:
-        logging.warning("photo fetch failed %s: %s", url, e)
-        return None
-
-
-def _encode_face(img: np.ndarray) -> Optional[np.ndarray]:
-    try:
-        locations = face_recognition.face_locations(img, model="hog")
-        if not locations:
-            return None
-        encs = face_recognition.face_encodings(img, known_face_locations=locations[:1])
-        return encs[0] if encs else None
-    except Exception as e:
-        logging.warning("face encoding failed: %s", e)
-        return None
-
-
-def _decode_b64_image(payload: str) -> Optional[np.ndarray]:
-    try:
-        if payload.startswith("data:"):
-            payload = payload.split(",", 1)[1]
-        img = PILImage.open(io.BytesIO(b64decode(payload))).convert("RGB")
-        return np.array(img)
-    except Exception as e:
-        logging.warning("b64 decode failed: %s", e)
-        return None
-
-
-import json  # for face_encoding serialization
-
-
 async def send_otp_email(to_email: str, otp: str) -> None:
     message = EmailMessage()
     message["From"] = SMTP_FROM
