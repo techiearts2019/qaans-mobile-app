@@ -1183,20 +1183,6 @@ def match_face(payload: FaceMatchIn):
                 matches_out.append(FaceMatchItem(matched=False, distance=best_dist))
                 continue
 
-            # server-side cooldown check
-            recent = (
-                db.query(AttendanceRecord)
-                .filter(AttendanceRecord.employee_id == best_emp.id)
-                .order_by(AttendanceRecord.created_at.desc())
-                .first()
-                if hasattr(AttendanceRecord, "created_at")
-                else None
-            )
-            if recent is not None:
-                # AttendanceRecord.time is "HH:MM AM" string — can't reliably
-                # diff; rely on client cooldown. Left as future improvement.
-                pass
-
             already_matched_ids.add(best_emp.id)
             rec = AttendanceRecord(
                 employee_id=best_emp.id,
