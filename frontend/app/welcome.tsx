@@ -6,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { DihadiLogo } from "@/src/components/DihadiLogo";
+import { QaansLogo } from "@/src/components/QaansLogo";
 import { PrimaryButton } from "@/src/components/PrimaryButton";
 import { colors, radius } from "@/src/theme/colors";
 
@@ -27,7 +27,7 @@ export default function Welcome() {
         />
         <SafeAreaView edges={["top"]} style={styles.heroContent}>
           <View style={styles.brandRow}>
-            <DihadiLogo size={44} variant="brand" />
+            <QaansLogo size={44} variant="brand" />
             <Text style={styles.brandText}>Qaans ERP</Text>
           </View>
 

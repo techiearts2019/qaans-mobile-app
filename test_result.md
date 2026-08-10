@@ -225,7 +225,26 @@ agent_communication:
 
   - agent: "main"
     message: >
-      Round 2 changes — please re-verify Face Attendance:
+      Round 3 changes — live face bounding boxes over camera preview.
+
+      BACKEND (server.py):
+      1) NEW schema `FaceBox {top,right,bottom,left}` all normalized to 0..1.
+      2) Every `FaceMatchItem` now includes an optional `box: FaceBox` computed
+         from the raw pixel `face_locations` divided by frame width/height.
+      3) Backward compatible: existing clients ignoring `box` still work.
+
+      FRONTEND (attendance.tsx):
+      1) `CameraView` captures its rendered size via onLayout.
+      2) Every match tick populates `boxes` state from `res.matches`. Each box
+         is rendered as an absolutely-positioned rectangle: green + employee
+         name for matched, amber + "Unknown" for unmatched.
+      3) Front-camera compensation: preview is horizontally mirrored on device
+         but the captured image is NOT, so we flip `left/right` when
+         `facing === "front"` so the box stays on the actual face.
+      4) BOX_TTL_MS = 2200 clears stale boxes when scanning pauses.
+
+      Round 2 context (for reference — previously verified in iteration_2):
+
 
       BACKEND (server.py):
       1) POST /api/employees/{emp_id}/enroll-face now runs a quality gate

@@ -1,4 +1,4 @@
-// Dihadi app theme — clean, modern B2B palette
+// Qaans app theme — clean, modern B2B palette
 export const colors = {
   // Brand
   primary: "#0F172A",        // slate-900 — main dark

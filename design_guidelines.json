@@ -62,8 +62,8 @@
     "1_splash": {
       "layout": "flex flex-col items-center justify-center min-h-screen bg-slate-900",
       "elements": [
-        "Custom Dihadi 'D' Monogram Logo (White/Blue)",
-        "Brand Name 'Dihadi' in text-4xl text-white font-bold mt-4",
+        "Custom Qaans 'Q' Monogram Logo (White/Blue)",
+        "Brand Name 'Qaans' in text-4xl text-white font-bold mt-4",
         "Minimal spinning loader or pulsing dot at the bottom"
       ]
     },

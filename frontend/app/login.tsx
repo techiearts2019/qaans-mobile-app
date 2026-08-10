@@ -12,7 +12,7 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { DihadiLogo } from "@/src/components/DihadiLogo";
+import { QaansLogo } from "@/src/components/QaansLogo";
 import { PrimaryButton } from "@/src/components/PrimaryButton";
 import { Toast } from "@/src/components/Toast";
 import { api } from "@/src/lib/api";
@@ -81,7 +81,7 @@ export default function Login() {
         </Pressable>
 
         <View style={styles.logoWrap}>
-          <DihadiLogo size={56} />
+          <QaansLogo size={56} />
         </View>
 
         <Text style={styles.title}>Welcome back</Text>

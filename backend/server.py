@@ -1,5 +1,5 @@
 """
-Dihadi FastAPI backend — MySQL (via SQLAlchemy + PyMySQL) + JWT/email-OTP auth
+Qaans FastAPI backend — MySQL (via SQLAlchemy + PyMySQL) + JWT/email-OTP auth
 """
 
 from __future__ import annotations
@@ -511,11 +511,20 @@ class FaceEnrollOut(BaseModel):
     employee: Optional[EmployeeOut] = None
 
 
+class FaceBox(BaseModel):
+    """Normalized bounding box (0..1) of a detected face in the analyzed frame."""
+    top: float
+    right: float
+    bottom: float
+    left: float
+
+
 class FaceMatchItem(BaseModel):
     matched: bool
     distance: Optional[float] = None
     employee: Optional[EmployeeOut] = None
     attendance: Optional[AttendanceOut] = None
+    box: Optional[FaceBox] = None
 
 
 class FaceMatchOut(BaseModel):
@@ -1168,7 +1177,15 @@ def match_face(payload: FaceMatchIn):
         matches_out: list[FaceMatchItem] = []
         already_matched_ids: set[str] = set()
 
-        for _loc, probe in probes:
+        h_img, w_img = frame.shape[:2]
+        for loc, probe in probes:
+            top_px, right_px, bottom_px, left_px = loc
+            box = FaceBox(
+                top=top_px / h_img if h_img else 0,
+                right=right_px / w_img if w_img else 0,
+                bottom=bottom_px / h_img if h_img else 0,
+                left=left_px / w_img if w_img else 0,
+            )
             best_emp: Optional[Employee] = None
             best_dist: Optional[float] = None
             for emp, enc_arr in emp_encs:
@@ -1180,7 +1197,7 @@ def match_face(payload: FaceMatchIn):
                     best_emp = emp
 
             if best_emp is None or best_dist is None or best_dist > payload.threshold:
-                matches_out.append(FaceMatchItem(matched=False, distance=best_dist))
+                matches_out.append(FaceMatchItem(matched=False, distance=best_dist, box=box))
                 continue
 
             already_matched_ids.add(best_emp.id)
@@ -1209,6 +1226,7 @@ def match_face(payload: FaceMatchIn):
                         time=rec.time,
                         status=rec.status,
                     ),
+                    box=box,
                 )
             )
 

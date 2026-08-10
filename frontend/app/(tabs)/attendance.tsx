@@ -26,6 +26,10 @@ import { colors, radius, shadow } from "@/src/theme/colors";
 
 type Phase = "idle" | "scanning" | "matched";
 
+// keep the last-detected face boxes on-screen briefly after each match tick
+// so the overlay doesn't flicker between polls.
+const BOX_TTL_MS = 2200;
+
 const MATCH_INTERVAL_MS = 1500;
 const MATCH_MODAL_AUTOCLOSE_MS = 3000;
 const PER_EMPLOYEE_COOLDOWN_MS = 60_000;
@@ -43,6 +47,11 @@ export default function FaceAttendance() {
   const [facesInFrame, setFacesInFrame] = useState(0);
   const [matchQueue, setMatchQueue] = useState<FaceMatchItem[]>([]);
   const [inFlight, setInFlight] = useState(false);
+  const [boxes, setBoxes] = useState<FaceMatchItem[]>([]);
+  const [cameraLayout, setCameraLayout] = useState<{
+    w: number;
+    h: number;
+  } | null>(null);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollEmp, setEnrollEmp] = useState<Employee | null>(null);
   const [enrollBusy, setEnrollBusy] = useState(false);
@@ -174,6 +183,8 @@ export default function FaceAttendance() {
         if (cancelled) return;
 
         setFacesInFrame(res.faces_detected ?? 0);
+        // Update box overlay with every response — matched flag decides colour.
+        setBoxes((res.matches ?? []).filter((m) => m.box));
 
         // Iterate all matches, apply per-employee cooldown, then queue new ones
         const successful = (res.matches ?? []).filter(
@@ -265,6 +276,13 @@ export default function FaceAttendance() {
     const t = setTimeout(resumeScan, MATCH_MODAL_AUTOCLOSE_MS);
     return () => clearTimeout(t);
   }, [phase, matched, resumeScan]);
+
+  // Clear stale face-boxes if a new frame doesn't arrive within BOX_TTL_MS
+  useEffect(() => {
+    if (boxes.length === 0) return;
+    const t = setTimeout(() => setBoxes([]), BOX_TTL_MS);
+    return () => clearTimeout(t);
+  }, [boxes]);
 
   const openEnroll = useCallback(() => {
     setEnrollError(null);
@@ -383,10 +401,69 @@ export default function FaceAttendance() {
           style={StyleSheet.absoluteFill}
           facing={facing}
           testID="face-camera-view"
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setCameraLayout({ w: width, h: height });
+          }}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.black }]} />
       )}
+
+      {/* Face bounding boxes — drawn on top of the camera preview. Coordinates
+          come from the backend (normalized 0..1) so they mirror the last frame
+          captured (~1.5s cadence). Front-facing camera preview is horizontally
+          mirrored on device but the captured image is NOT, so we flip x for the
+          front camera to keep the box on the actual face on screen. */}
+      {cameraLayout && boxes.length > 0 ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {boxes.map((b, idx) => {
+            const box = b.box!;
+            const leftFrac = facing === "front" ? 1 - box.right : box.left;
+            const rightFrac = facing === "front" ? 1 - box.left : box.right;
+            const x = leftFrac * cameraLayout.w;
+            const y = box.top * cameraLayout.h;
+            const w = (rightFrac - leftFrac) * cameraLayout.w;
+            const h = (box.bottom - box.top) * cameraLayout.h;
+            const color = b.matched ? colors.success : "#F59E0B";
+            const label = b.matched
+              ? b.employee?.name ?? "Match"
+              : "Unknown";
+            return (
+              <View
+                key={`box-${idx}-${b.employee?.id ?? "u"}`}
+                testID={`face-box-${idx}`}
+                style={[
+                  styles.faceBox,
+                  {
+                    left: x,
+                    top: y,
+                    width: w,
+                    height: h,
+                    borderColor: color,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.faceBoxLabel,
+                    { backgroundColor: color },
+                  ]}
+                >
+                  <Ionicons
+                    name={b.matched ? "checkmark" : "help"}
+                    size={10}
+                    color={colors.white}
+                  />
+                  <Text style={styles.faceBoxLabelText} numberOfLines={1}>
+                    {label}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
       {/* darken overlay */}
       <LinearGradient
         colors={["rgba(0,0,0,0.55)", "rgba(0,0,0,0.2)", "rgba(0,0,0,0.85)"]}
@@ -1111,5 +1188,29 @@ const styles = StyleSheet.create({
     color: colors.danger ?? "#DC2626",
     fontSize: 13,
     fontWeight: "600",
+  },
+  faceBox: {
+    position: "absolute",
+    borderWidth: 2.5,
+    borderRadius: 10,
+    // subtle inner glow via shadow-like border style; RN doesn't do glow,
+    // we compensate with a bright colour.
+  },
+  faceBoxLabel: {
+    position: "absolute",
+    top: -22,
+    left: -1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: 200,
+  },
+  faceBoxLabelText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

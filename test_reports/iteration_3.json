@@ -1,0 +1,48 @@
+{
+  "summary": "Round-3 verification of Face Bounding Box Overlay feature for Qaans ERP Face Attendance. BACKEND: 25/25 pytest tests pass (7 iter-1 regression + 12 iter-2 regression + 6 new iter-3 box tests in /app/backend/tests/test_face_box_overlay.py). Every entry in `matches[]` of POST /api/attendance/match now carries a normalized `box:{top,right,bottom,left}` with all four floats in [0,1] and `top<bottom` / `left<right`. Box present for both matched AND unmatched detections. OpenAPI schema exposes `components.schemas.FaceBox` (top,right,bottom,left) and `FaceMatchItem.box` referencing FaceBox. All previous behaviours preserved (faces_detected, in-frame dedupe via already_matched_ids, threshold=0.60, backward-compat top-level matched/employee/attendance). FRONTEND: code review of /app/frontend/app/(tabs)/attendance.tsx confirms all spec requirements — (a) overlay renders when `cameraLayout && boxes.length > 0` (line 418), (b) one View per face with testID `face-box-${idx}` (line 435), (c) matched → borderColor `colors.success` with employee name label; unmatched → `#F59E0B` with 'Unknown' (lines 428-431), (d) front-cam mirror correction `leftFrac = facing==='front' ? 1 - box.right : box.left` (line 422), (e) auto-clear after BOX_TTL_MS=2200ms via setTimeout (line 283), (f) overlay pointerEvents='none' (line 419), (g) FaceBox/FaceMatchItem types wired in api.ts (lines 94-107). Web preview loads Qaans ERP landing screen without red-screen errors — box overlay itself cannot be exercised on web (no live face) which matches review note ('verifying overlay JSX renders when boxes state has entries via existing testIDs is enough').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "attendance.tsx", "issues": ["Same web-only cosmetic warnings persist as iter-1/iter-2: 'shadow*' style props deprecated, Animated useNativeDriver JS fallback, pointerEvents-as-prop deprecated. Harmless on device."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_face_attendance.py",
+    "/app/backend/tests/test_face_quality_multi.py",
+    "/app/backend/tests/test_face_box_overlay.py",
+    "/app/test_reports/pytest/iter3_results.xml"
+  ],
+  "action_items": [
+    "No functional fixes required — the face-bounding-box overlay feature fully satisfies the review-request spec on both backend and frontend.",
+    "OPTIONAL (test-only): the iter-2 fixture `second_employee` in test_face_quality_multi.py falls back to Ramesh's photo when the seed employee's photo URL is unreachable (e.g. file:// paths from prior mobile enrolments). That leaves DHD-2034 with a Ramesh-like encoding, which breaks `test_same_face_twice_dedupes` on subsequent module runs. The testing agent already cleared stale non-DHD-1042 encodings once before re-running; consider tightening the fixture to skip employees whose photo URL is not http(s) so it doesn't self-poison the DB across runs. Not a product bug.",
+    "OPTIONAL (carry-over): de-duplicate _load_image_from_url/_encode_face/_decode_b64_image helpers and duplicate `import json` in server.py.",
+    "OPTIONAL (carry-over): dead `hasattr(AttendanceRecord, 'created_at')` cooldown scaffolding in match_face — either wire to real created_at or remove."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1180-1188 correctly divides pixel bbox by frame h/w with a zero-guard (`if h_img else 0`) — no division-by-zero risk if a pathological 0-dim image slips through PIL.",
+    "server.py:1200 passes `box=box` on the unmatched branch too — spec requirement (unmatched detections still get a box) satisfied.",
+    "server.py:1229 passes `box=box` on the matched branch — both branches carry the box.",
+    "server.py:514-519 FaceBox is a Pydantic BaseModel with 4 required float properties; FastAPI auto-generates the JSON schema so `components.schemas.FaceBox` is guaranteed by construction.",
+    "attendance.tsx:187 filters `res.matches` to only entries with `.box` truthy before setBoxes — defensive against a backend that might return an item without a box (won't happen with current server but future-proof).",
+    "attendance.tsx:280-283 BOX_TTL_MS timer resets each time boxes update — auto-clear works whenever cadence drops (no new frame arrives within 2200 ms).",
+    "attendance.tsx:422-427 correctly computes on-screen rect from normalized coords using cameraLayout (captured via onLayout on the CameraView container).",
+    "attendance.tsx:419 overlay View has pointerEvents='none' — does not block touches to the flip-camera / close / enroll buttons underneath.",
+    "attendance.tsx:428 unmatched color is hard-coded '#F59E0B' (amber) rather than a `colors.warning` token — minor consistency nit but exactly matches the spec value.",
+    "api.ts:94-107 FaceBox/FaceMatchItem types exactly mirror backend Pydantic shape."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_face_box_overlay.py (new, 6 tests — 2 single-face box, 3 multi-face box, 1 OpenAPI schema)"
+  ],
+  "success_rate": {
+    "backend": "100% (25/25 — 7 iter-1 + 12 iter-2 + 6 iter-3)",
+    "frontend": "100% of testable paths via code review; web preview loads without red-screen; live-face overlay render intentionally not exercisable on web preview per review notes."
+  },
+  "seed_data_creation": "Re-seeded OtpCode row (techiearts19@gmail.com, hash of '123456', 5-min TTL) via module-scope pytest fixtures. Cleared stale face_encoding for non-DHD-1042 seed employees once to restore iter-2 baseline (see action item #2). New AttendanceRecord rows created by test_two_different_employees and test_matched_box_present — no cleanup needed as they're expected daily attendance entries.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "OTP bypass pattern unchanged (see iter-1/iter-2 reports). BASE_URL from EXPO_PUBLIC_BACKEND_URL + '/api'. openapi.json is NOT exposed via the public ingress (which only routes /api* to backend); fetch it from http://localhost:8001/openapi.json for schema assertions. Before running test_face_quality_multi.py on a dirty DB, consider clearing non-DHD-1042 face_encoding rows to avoid the self-poisoning issue noted in action item #2. All 6 new box tests are independent of DB seed state beyond DHD-1042 being enrolled (which the happy-path fixture guarantees). Front-camera mirror-flip is deterministic in JSX (`facing==='front' ? 1 - box.right : box.left`) — verifiable by unit test if snapshot testing is added later.",
+  "rca_of_issue": "No bug. Face bounding box overlay feature implemented correctly per spec — verified by 6 new pytest cases covering box presence for matched+unmatched, normalized [0,1] range, top<bottom / left<right sanity, side-by-side box non-overlap, and OpenAPI schema exposure. Frontend JSX branch verified by code review for all six spec bullets (testID naming, green/amber colors, employee-name/Unknown labels, front-cam mirror correction, BOX_TTL_MS auto-clear, pointerEvents='none')."
+}

@@ -1,4 +1,4 @@
-// Dihadi API client — hits the FastAPI backend at EXPO_PUBLIC_BACKEND_URL/api/*
+// Qaans API client — hits the FastAPI backend at EXPO_PUBLIC_BACKEND_URL/api/*
 // Never call MySQL directly from the mobile app.
 
 import { router } from "expo-router";
@@ -91,11 +91,19 @@ export type AttendanceEntry = {
   status?: "On Time" | "Late" | "Early Out" | null;
 };
 
+export type FaceBox = {
+  top: number; // 0..1 normalized
+  right: number;
+  bottom: number;
+  left: number;
+};
+
 export type FaceMatchItem = {
   matched: boolean;
   distance: number | null;
   employee: Employee | null;
   attendance: AttendanceEntry | null;
+  box?: FaceBox | null;
 };
 
 export type FaceMatchResult = {

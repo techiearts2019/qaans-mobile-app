@@ -1,7 +1,7 @@
-# Dihadi — Face Attendance App
+# Qaans — Face Attendance App
 
 ## Overview
-Dihadi is a mobile-first face attendance app for supervisors. Employees are enrolled with a photo, allocated to projects, and their check-in / check-out is captured via face recognition. Attendance, salary and notifications live in a MySQL/MariaDB database and are served to the Expo mobile app through a FastAPI backend.
+Qaans is a mobile-first face attendance app for supervisors. Employees are enrolled with a photo, allocated to projects, and their check-in / check-out is captured via face recognition. Attendance, salary and notifications live in a MySQL/MariaDB database and are served to the Expo mobile app through a FastAPI backend.
 
 ## Architecture
 ```
@@ -36,7 +36,7 @@ Auth is intentionally OFF for the current demo.
 - Mock data file (`mockData.ts`) is kept only for enum lists (designations, skills, genders, marital statuses).
 
 ## Design System
-Slate-900 primary, Blue-600 brand, Emerald-600 success. Radius 12/16/20/28. 8pt grid. Custom Dihadi monogram logo bundled as image asset.
+Slate-900 primary, Blue-600 brand, Emerald-600 success. Radius 12/16/20/28. 8pt grid. Custom Qaans monogram logo bundled as image asset.
 
 ## Dependencies
 - Backend: `fastapi`, `uvicorn`, `sqlalchemy`, `pymysql`, `cryptography`, `python-dotenv`.

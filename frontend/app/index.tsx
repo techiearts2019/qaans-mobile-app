@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 
-import { DihadiLogo } from "@/src/components/DihadiLogo";
+import { QaansLogo } from "@/src/components/QaansLogo";
 import { colors } from "@/src/theme/colors";
 
 export default function Splash() {
@@ -55,7 +55,7 @@ export default function Splash() {
       <Animated.View
         style={{ transform: [{ scale }], opacity, alignItems: "center" }}
       >
-        <DihadiLogo size={260} />
+        <QaansLogo size={260} />
       </Animated.View>
 
       <View style={styles.dotsRow}>
